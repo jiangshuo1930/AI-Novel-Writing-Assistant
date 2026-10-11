@@ -27,6 +27,8 @@ export interface NovelBasicFormState {
   emotionIntensity: "low" | "medium" | "high";
   aiFreedom: "low" | "medium" | "high";
   postGenerationStyleReviewEnabled: boolean;
+  /** sepia 去 AI 味：正文生成后按「叙事架构 → 语篇流动 → 表层风格」三轮逐层去 AI 味。 */
+  sepiaDeAi: boolean;
   defaultChapterLength: number;
   estimatedChapterCount: number;
   projectStatus: "not_started" | "in_progress" | "completed" | "rework" | "blocked";
@@ -257,6 +259,7 @@ export const BASIC_INFO_FIELD_HINTS = {
   emotionIntensity: "决定后续生成时情绪爆发和冲突的频率，不是越高越好。",
   aiFreedom: "决定 AI 可以偏离既有规划和设定的程度。前期建议保持低或中。",
   postGenerationStyleReviewEnabled: "在章节检查中核对有效写法与反 AI 规则，修文遵循本次创作策略。关闭后，正文生成仍使用写法与反 AI 提示。",
+  sepiaDeAi: "默认开启。正文生成后自动执行 sepia 三轮去 AI 味：先诊断叙事架构，再修语篇流动，最后清理表层套语与语法模板。会额外消耗三轮调用（每章约多花 30 秒）。",
   defaultChapterLength: "这是章节规划和生成时的参考字数，不是硬限制。常见推荐值是 2500 到 3500。",
   estimatedChapterCount: "这是项目预估的总章节数，会作为结构化大纲、剧情拍点和流水线默认范围的参考，不是硬限制。",
   resourceReadyScore: "用于标记设定、角色、主线资料是否充分。数值越高，越适合进入自动化生产阶段。",
@@ -295,6 +298,7 @@ export function createDefaultNovelBasicFormState(): NovelBasicFormState {
     emotionIntensity: "medium",
     aiFreedom: "medium",
     postGenerationStyleReviewEnabled: true,
+    sepiaDeAi: true,
     defaultChapterLength: 2800,
     estimatedChapterCount: DEFAULT_ESTIMATED_CHAPTER_COUNT,
     projectStatus: "not_started",
@@ -391,6 +395,7 @@ export function buildNovelCreatePayload(basicForm: NovelBasicFormState) {
     emotionIntensity: basicForm.emotionIntensity,
     aiFreedom: basicForm.aiFreedom,
     postGenerationStyleReviewEnabled: basicForm.postGenerationStyleReviewEnabled,
+    sepiaDeAi: basicForm.sepiaDeAi,
     defaultChapterLength: basicForm.defaultChapterLength,
     estimatedChapterCount: basicForm.estimatedChapterCount,
     projectStatus: basicForm.projectStatus,
@@ -451,6 +456,7 @@ export function buildNovelUpdatePayload(basicForm: NovelBasicFormState) {
     emotionIntensity: basicForm.emotionIntensity,
     aiFreedom: basicForm.aiFreedom,
     postGenerationStyleReviewEnabled: basicForm.postGenerationStyleReviewEnabled,
+    sepiaDeAi: basicForm.sepiaDeAi,
     defaultChapterLength: basicForm.defaultChapterLength,
     estimatedChapterCount: basicForm.estimatedChapterCount,
     projectStatus: basicForm.projectStatus,

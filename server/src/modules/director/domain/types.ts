@@ -90,6 +90,10 @@ export interface RunLaunchInput {
   model?: string;
   executionRange?: ChapterRange;
   issuePolicyMode?: IssuePolicyMode;
+  /** sepia 去 AI 味：正文生成后、接收闸门前依次执行 sepia 三轮（叙事架构 → 语篇流动 → 表层风格）。默认开启。 */
+  sepiaDeAi?: boolean;
+  /** sepia 目标语域，默认「中文小说」。 */
+  sepiaRegister?: string;
 }
 
 export type RunStatus =

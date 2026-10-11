@@ -6,6 +6,20 @@
       "sourceType": "github",
       "skillPath": "plugins/stitch-build/skills/shadcn-ui/SKILL.md",
       "computedHash": "119a14a004bd30fa99d386df599bd0db8d057cca146f7ee08349daed48b2ea55"
+    },
+    "sepia": {
+      "source": "Nanako0129/sepia",
+      "sourceType": "github",
+      "skillPath": "skills/sepia/SKILL.md",
+      "license": "MIT",
+      "note": "De-AI writing skill. Installed with the sibling operation entries sepia-write/sepia-review/sepia-refactor/sepia-recreate and the sepia-hemingway voice entry."
+    },
+    "sepia-hemingway": {
+      "source": "Nanako0129/sepia",
+      "sourceType": "github",
+      "skillPath": "skills/sepia-hemingway/SKILL.md",
+      "license": "MIT",
+      "note": "Opt-in voice entry. Requires the co-installed sepia canonical skill at ../sepia/SKILL.md."
     }
   }
 }

@@ -37,6 +37,7 @@ interface PipelineFormState {
   skipCompleted: boolean;
   qualityThreshold: number;
   repairMode: PipelineRepairMode;
+  sepiaDeAi: boolean;
 }
 
 interface UseNovelEditMutationsArgs {
@@ -267,6 +268,7 @@ export function useNovelEditMutations({
         skipCompleted: override?.skipCompleted ?? pipelineForm.skipCompleted,
         qualityThreshold: override?.qualityThreshold ?? pipelineForm.qualityThreshold,
         repairMode: override?.repairMode ?? pipelineForm.repairMode,
+        sepiaDeAi: override?.sepiaDeAi ?? pipelineForm.sepiaDeAi,
         provider: llm.provider,
         model: llm.model,
         temperature: llm.temperature,

@@ -6,6 +6,7 @@ import type {
   NarrativeRules,
   RhythmRules,
 } from "@ai-novel/shared/types/styleEngine";
+import { SEPIA_ANTI_AI_RULES } from "./sepiaAntiAiRules";
 
 export interface DefaultTemplateDefinition {
   key: string;
@@ -604,4 +605,6 @@ export const DEFAULT_ANTI_AI_RULES: DefaultAntiAiRuleDefinition[] = [
     enabled: true,
     globalBaselineEnabled: false,
   },
+  // sepia 反 AI 规则（架构层 + 语篇层 + 表层），来源 Nanako0129/sepia（MIT）。
+  ...SEPIA_ANTI_AI_RULES,
 ];

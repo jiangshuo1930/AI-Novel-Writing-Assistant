@@ -79,6 +79,7 @@ export function buildAutoDirectorRequestPayload(
     emotionIntensity: basicForm.emotionIntensity,
     aiFreedom: basicForm.aiFreedom,
     postGenerationStyleReviewEnabled: basicForm.postGenerationStyleReviewEnabled,
+    sepiaDeAi: basicForm.sepiaDeAi,
     defaultChapterLength: basicForm.defaultChapterLength,
     estimatedChapterCount: basicForm.estimatedChapterCount,
     projectStatus: basicForm.projectStatus,

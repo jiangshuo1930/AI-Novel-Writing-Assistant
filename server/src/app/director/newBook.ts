@@ -34,6 +34,8 @@ export async function launchNewDirectorBook(input: DirectorConfirmRequest, sourc
     ? {from:input.autoExecutionPlan?.startOrder ?? 1,to:end} : undefined;
   const result = await getDirectorProductionServices().http.commandService.execute({type:"open_run",novelId:novel.id,driver:source === "original_opening" && input.runMode !== "stage_review" ? "auto" : "assisted",stepIdsInScope:null,
     idempotencyKey:`${source === "creation_studio" ? "creation-studio" : source}:${sourceTaskId}:director`,launchInput:{storyInput:source === "original_opening" ? `${input.idea}\n\n已选定的开书方向：\n${JSON.stringify(input.candidate)}` : input.idea,estimatedChapterCount:chapterCount,
-      worldMode:input.worldId ? "reuse" : input.worldSetupMode === "skip" ? "skip" : "generate",targetMode:"opening",provider,model,temperature:input.temperature ?? selection?.temperature,executionRange}});
+      worldMode:input.worldId ? "reuse" : input.worldSetupMode === "skip" ? "skip" : "generate",targetMode:"opening",provider,model,temperature:input.temperature ?? selection?.temperature,executionRange,
+      // sepia 去 AI 味默认开启；仅当调用方显式传 false 时关闭（避免漏传被服务端兜底成开启而关不掉）。
+      sepiaDeAi:input.sepiaDeAi ?? true, ...(input.sepiaRegister?.trim() ? {sepiaRegister:input.sepiaRegister.trim()} : {})}});
   return {novel,workflowTaskId:result.runId};
 }

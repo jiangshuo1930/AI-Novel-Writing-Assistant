@@ -115,6 +115,20 @@ export default function StageModelRun({
           />
         </div>
 
+        <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <div className="text-sm font-medium text-foreground">sepia 三轮去 AI 味</div>
+            <div className={`text-xs leading-5 text-muted-foreground ${AUTO_DIRECTOR_MOBILE_CLASSES.wrapText}`}>
+              默认开启。每章正文生成后、进入章节检查前，依次执行叙事架构、语篇流动、表层风格三轮去 AI 味。会额外消耗三轮调用（每章约多花 30 秒）。
+            </div>
+          </div>
+          <Switch
+            aria-label="sepia 三轮去 AI 味"
+            checked={basicForm.sepiaDeAi}
+            onCheckedChange={(checked) => onBasicFormChange({ sepiaDeAi: checked })}
+          />
+        </div>
+
         <details className="group rounded-2xl border border-border/70 bg-background px-5 py-4">
           <summary className="cursor-pointer list-none">
             <div className="text-sm font-medium text-foreground">模型设置</div>

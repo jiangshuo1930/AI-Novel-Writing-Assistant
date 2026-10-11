@@ -266,6 +266,9 @@ export class NovelDirectorCandidateRuntime {
       postGenerationStyleReviewEnabled: typeof directorTaskData.postGenerationStyleReviewEnabled === "boolean"
         ? directorTaskData.postGenerationStyleReviewEnabled
         : undefined,
+      sepiaDeAi: typeof directorTaskData.sepiaDeAi === "boolean"
+        ? directorTaskData.sepiaDeAi
+        : undefined,
       defaultChapterLength: typeof directorTaskData.defaultChapterLength === "number"
         ? directorTaskData.defaultChapterLength
         : undefined,

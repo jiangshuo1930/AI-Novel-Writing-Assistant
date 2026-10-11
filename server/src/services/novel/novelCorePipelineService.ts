@@ -459,6 +459,9 @@ export class NovelCorePipelineService {
             qualityThreshold: options.qualityThreshold,
             repairMode: options.repairMode ?? "light_repair",
             artifactSyncMode: options.artifactSyncMode ?? "adaptive",
+            // sepia 去 AI 味默认开启；调用方显式传 false 可关闭。
+            sepiaDeAi: options.sepiaDeAi ?? true,
+            sepiaRegister: options.sepiaRegister,
           }),
         },
       });

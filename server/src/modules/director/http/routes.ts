@@ -46,6 +46,8 @@ const commandBodySchema = z.discriminatedUnion("type", [
       executionRange: z.object({from: z.number().int().positive(), to: z.number().int().positive()})
         .refine(range => range.to >= range.from).optional(),
       issuePolicyMode: z.enum(["completion_first", "quality_first"]).optional(),
+      sepiaDeAi: z.boolean().optional(),
+      sepiaRegister: z.string().trim().max(40).optional(),
     }).optional(),
     idempotencyKey: nonEmpty,
   }),

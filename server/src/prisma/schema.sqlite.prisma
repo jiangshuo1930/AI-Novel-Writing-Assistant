@@ -349,6 +349,7 @@ model Novel {
   emotionIntensity  EmotionIntensity?
   aiFreedom         AIFreedom?
   postGenerationStyleReviewEnabled Boolean @default(true)
+  sepiaDeAi         Boolean @default(true)
   defaultChapterLength Int?
   estimatedChapterCount Int?
   projectStatus     ProjectProgressStatus? @default(not_started)
