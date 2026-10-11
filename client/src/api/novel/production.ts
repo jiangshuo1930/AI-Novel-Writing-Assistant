@@ -26,6 +26,10 @@ export async function runNovelPipeline(
     qualityThreshold?: number;
     repairMode?: PipelineRepairMode;
     artifactSyncMode?: ArtifactSyncMode;
+    /** sepia 去 AI 味：生成后、接收闸门前执行 sepia 两阶段。 */
+    sepiaDeAi?: boolean;
+    /** sepia 目标语域，默认「中文小说」。 */
+    sepiaRegister?: string;
     provider?: LLMProvider;
     model?: string;
     temperature?: number;

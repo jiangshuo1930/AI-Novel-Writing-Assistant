@@ -42,6 +42,7 @@ import promptWorkbenchRouter from "./routes/promptWorkbench";
 import ragRouter from "./routes/rag";
 import settingsAutoDirectorRouter from "./routes/settingsAutoDirector";
 import settingsRouter from "./routes/settings";
+import sepiaRouter from "./routes/sepia";
 import styleEngineRouter from "./routes/styleEngine";
 import styleEngineExtractionRouter from "./routes/styleEngineExtraction";
 import storyModeRouter from "./routes/storyMode";
@@ -141,6 +142,7 @@ export function createApp() {
   app.use("/api/title-library", titleLibraryRouter);
   app.use("/api", styleEngineRouter);
   app.use("/api", styleEngineExtractionRouter);
+  app.use("/api", sepiaRouter);
   const directorNextEnabled = parseEnvFlag(process.env.DIRECTOR_NEXT_ENABLED, true);
   const {createDirectorVersionRouter} = require("./modules/novel/director-routing") as typeof import("./modules/novel/director-routing");
   app.use("/api/novels", createDirectorVersionRouter());

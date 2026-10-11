@@ -17,6 +17,7 @@ interface PipelineFormState {
   skipCompleted: boolean;
   qualityThreshold: number;
   repairMode: "detect_only" | "light_repair" | "heavy_repair" | "continuity_only" | "character_only" | "ending_only";
+  sepiaDeAi: boolean;
 }
 
 interface CharacterFormState {
@@ -127,6 +128,7 @@ export function useNovelEditInitialization({
       emotionIntensity: detail.emotionIntensity ?? "medium",
       aiFreedom: detail.aiFreedom ?? "medium",
       postGenerationStyleReviewEnabled: detail.postGenerationStyleReviewEnabled ?? true,
+      sepiaDeAi: detail.sepiaDeAi ?? true,
       defaultChapterLength: detail.defaultChapterLength ?? 2800,
       estimatedChapterCount: detail.estimatedChapterCount ?? DEFAULT_ESTIMATED_CHAPTER_COUNT,
       projectStatus: detail.projectStatus ?? "not_started",

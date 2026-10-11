@@ -8,14 +8,16 @@ test('V2 adapter resumes finalized assets before context assembly, generation or
   const store = {load: async (...args) => {events.push(['load', ...args]); return {content: 'final repaired draft', result};}, save: async () => {throw Error('cannot save another finalization');}};
   const runtime = loadRuntimeSource('chapterRuntimePipeline.ts', {
     '../../styleEngine/styleGenerationSanitizer': {}, './chapterEmptyContentError': {},
+    '../../styleEngine/SepiaDeAiService': {runSepiaDeAi: async () => ({rewritten: false, rewrittenContent: null})},
     './repair/chapterRepairRuntime': {}, './repair/ChapterRepairEligibility': {}, './proseQuality': {},
     '../chapterPatchRepairService': {}, './selection/ChapterRepairCandidateSelection': {},
     './artifactSync/ChapterArtifactSyncResult': {ChapterArtifactSyncBoundaryError: class extends Error {}},
   });
   const {ChapterPipelineRuntimeAdapter} = loadRuntimeSource('ChapterPipelineRuntimeAdapter.ts', {
     './ChapterArtifactSyncService': {}, './chapterRuntimePipeline': runtime, './chapterEmptyContentError': {},
-    './artifactSync': {ChapterPipelineFinalizationStore: class {}},
+    './artifactSync': {ChapterPipelineFinalizationStore: class {}, ChapterArtifactSyncBoundaryError: class extends Error {}},
     '../production/observation': {chapterGenerationFeed: {}},
+    '../../../db/prisma': {prisma: {novel: {findUnique: async () => null}}},
   });
   const adapter = new ChapterPipelineRuntimeAdapter({
     finalizationStore: store,

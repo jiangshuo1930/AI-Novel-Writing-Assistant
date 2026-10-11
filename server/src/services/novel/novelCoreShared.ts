@@ -43,6 +43,8 @@ export interface CreateNovelInput {
   emotionIntensity?: "low" | "medium" | "high";
   aiFreedom?: "low" | "medium" | "high";
   postGenerationStyleReviewEnabled?: boolean;
+  /** sepia 去 AI 味：正文生成后依次执行叙事架构 → 语篇流动 → 表层风格三轮。默认开启。 */
+  sepiaDeAi?: boolean;
   defaultChapterLength?: number;
   estimatedChapterCount?: number;
   projectStatus?: "not_started" | "in_progress" | "completed" | "rework" | "blocked";
@@ -78,6 +80,8 @@ export interface UpdateNovelInput {
   emotionIntensity?: "low" | "medium" | "high" | null;
   aiFreedom?: "low" | "medium" | "high" | null;
   postGenerationStyleReviewEnabled?: boolean;
+  /** sepia 去 AI 味：正文生成后依次执行叙事架构 → 语篇流动 → 表层风格三轮。 */
+  sepiaDeAi?: boolean;
   defaultChapterLength?: number | null;
   estimatedChapterCount?: number | null;
   projectStatus?: "not_started" | "in_progress" | "completed" | "rework" | "blocked" | null;
@@ -207,6 +211,10 @@ export interface PipelineRunOptions extends LLMGenerateOptions {
   qualityThreshold?: number;
   repairMode?: "detect_only" | "light_repair" | "heavy_repair" | "continuity_only" | "character_only" | "ending_only";
   artifactSyncMode?: ArtifactSyncMode;
+  /** sepia 去 AI 味：生成后、接收闸门前执行 sepia 两阶段。 */
+  sepiaDeAi?: boolean;
+  /** sepia 目标语域，默认「中文小说」。 */
+  sepiaRegister?: string;
 }
 
 export type PipelineBackgroundSyncKind = "artifact_delta" | "character_dynamics" | "state_snapshot" | "payoff_ledger" | "character_resources" | "canonical_state";
@@ -243,6 +251,10 @@ export interface PipelinePayload extends LLMGenerateOptions {
   qualityThreshold?: number;
   repairMode?: "detect_only" | "light_repair" | "heavy_repair" | "continuity_only" | "character_only" | "ending_only";
   artifactSyncMode?: ArtifactSyncMode;
+  /** sepia 去 AI 味：生成后、接收闸门前执行 sepia 两阶段。 */
+  sepiaDeAi?: boolean;
+  /** sepia 目标语域，默认「中文小说」。 */
+  sepiaRegister?: string;
   qualityAlertDetails?: string[];
   replanAlertDetails?: string[];
   recoverableRepairDetails?: string[];

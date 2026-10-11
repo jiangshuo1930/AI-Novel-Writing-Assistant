@@ -673,4 +673,24 @@ export const promptAssetLoaderEntries: PromptAssetLoaderEntry[] = [
     key: "world.axioms.suggest@v1",
     load: () => require("../prompts/world/world.prompts").worldAxiomSuggestionPrompt as UnknownPromptAsset,
   },
+  {
+    key: "sepia.text.diagnose@v1",
+    load: () => require("../prompts/sepia/sepia.prompts").sepiaDiagnosisPrompt as UnknownPromptAsset,
+  },
+  {
+    key: "sepia.text.rewrite@v1",
+    load: () => require("../prompts/sepia/sepia.prompts").sepiaRewritePrompt as UnknownPromptAsset,
+  },
+  {
+    key: "sepia.pass.architecture@v1",
+    load: () => require("../prompts/sepia/sepia.prompts").sepiaArchitecturePassPrompt as UnknownPromptAsset,
+  },
+  {
+    key: "sepia.pass.discourse@v1",
+    load: () => require("../prompts/sepia/sepia.prompts").sepiaDiscoursePassPrompt as UnknownPromptAsset,
+  },
+  {
+    key: "sepia.pass.surface@v1",
+    load: () => require("../prompts/sepia/sepia.prompts").sepiaSurfacePassPrompt as UnknownPromptAsset,
+  },
 ];

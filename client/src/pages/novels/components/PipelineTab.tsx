@@ -30,9 +30,10 @@ interface PipelineTabProps {
     skipCompleted: boolean;
     qualityThreshold: number;
     repairMode: "detect_only" | "light_repair" | "heavy_repair" | "continuity_only" | "character_only" | "ending_only";
+    sepiaDeAi: boolean;
   };
   onPipelineFormChange: (
-    field: "startOrder" | "endOrder" | "maxRetries" | "runMode" | "autoReview" | "autoRepair" | "skipCompleted" | "qualityThreshold" | "repairMode",
+    field: "startOrder" | "endOrder" | "maxRetries" | "runMode" | "autoReview" | "autoRepair" | "skipCompleted" | "qualityThreshold" | "repairMode" | "sepiaDeAi",
     value: number | boolean | string,
   ) => void;
   maxOrder: number;
@@ -370,9 +371,17 @@ export default function PipelineTab(props: PipelineTabProps) {
                   />
                   跳过已完成章节
                 </label>
+                <label className="flex items-center gap-1" title="默认开启。生成后自动执行 sepia 两阶段去 AI 味：先诊断叙事架构、语篇、表层，再按最深一层优先修复。取消勾选可关闭。会额外消耗一次诊断 + 一次改写调用。">
+                  <input
+                    type="checkbox"
+                    checked={pipelineForm.sepiaDeAi}
+                    onChange={(event) => onPipelineFormChange("sepiaDeAi", event.target.checked)}
+                  />
+                  去 AI 味（sepia）
+                </label>
               </div>
               <div className="rounded-md border bg-muted/20 p-2 text-xs text-muted-foreground">
-                当前设置：{pipelineForm.runMode === "polish" ? "精修" : "快速"} | 阈值 {pipelineForm.qualityThreshold} | {repairModeLabel(pipelineForm.repairMode)}
+                当前设置：{pipelineForm.runMode === "polish" ? "精修" : "快速"} | 阈值 {pipelineForm.qualityThreshold} | {repairModeLabel(pipelineForm.repairMode)}{pipelineForm.sepiaDeAi ? " | 去 AI 味：sepia" : ""}
               </div>
             </CardContent>
           </Card>

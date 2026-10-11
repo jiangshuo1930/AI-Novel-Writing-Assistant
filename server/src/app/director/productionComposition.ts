@@ -91,6 +91,8 @@ export function createDirectorProductionOptions(): DirectorNextServiceOptions {
       const policy = directorIssuePolicySchema.parse(context.contract.issuePolicy.pipelinePolicy);
       return {...modelOptions(context), startOrder: range.from, endOrder: range.to, directorNext: {runId: context.runId, decisions: []},
         issueGovernanceVersion: 1 as const, issuePolicySnapshot: policy, autoReview: true, autoRepair: true,
+        // sepia 默认开启；仅当调用方显式传递 false 时关闭（保证 UI 取消勾选可关）。
+        sepiaDeAi: input.sepiaDeAi ?? true, ...(input.sepiaRegister ? {sepiaRegister: input.sepiaRegister} : {}),
         controlPolicy: {kickoffMode: "director_start" as const, advanceMode: range.to === input.estimatedChapterCount ? "full_book_autopilot" as const : "auto_to_execution" as const,
           reviewCheckpoints: [], autoExecutionRange: {mode: "chapter_range" as const, start: range.from, end: range.to}}};
     }, jobBinding: {get: async runId => {

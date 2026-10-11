@@ -9,6 +9,7 @@ import {
   type ChapterArtifactSyncResult,
 } from "./artifactSync/ChapterArtifactSyncResult";
 import { detectForbiddenStyleEntities } from "../../styleEngine/styleGenerationSanitizer";
+import { runSepiaDeAi } from "../../styleEngine/SepiaDeAiService";
 import {
   assertChapterContentNotEmpty,
   isChapterEmptyContentError,
@@ -50,6 +51,13 @@ export interface PipelineRuntimeInput extends ChapterRuntimeRequestInput {
   autoRepair?: boolean;
   qualityThreshold?: number;
   repairMode?: "detect_only" | "light_repair" | "heavy_repair" | "continuity_only" | "character_only" | "ending_only";
+  /**
+   * Sepia 去 AI 味：在草稿生成后、接收闸门之前，对正文执行 sepia 完整两阶段
+   * （诊断 → 按最深一层优先逐条修）。默认关闭；开启后失败一律 fail-open 保留原稿。
+   */
+  sepiaDeAi?: boolean;
+  /** sepia 目标语域，默认「中文小说」。 */
+  sepiaRegister?: string;
 }
 
 /**
@@ -118,6 +126,8 @@ export interface AssembledRuntimeChapter {
 interface RunPipelineChapterDeps {
   loadFinalizedChapterResult?: (novelId: string, chapterId: string) => Promise<{content: string; result: PipelineRuntimeResult} | null>;
   persistFinalizedChapterResult?: (novelId: string, chapterId: string, content: string, result: PipelineRuntimeResult) => Promise<void>;
+  /** 小说级 sepia 开关：调用方 payload 未显式指定 sepiaDeAi 时作为兜底读取（开书时选定的本书配置）。 */
+  loadNovelSepiaConfig?: (novelId: string) => Promise<{sepiaDeAi: boolean} | null>;
   validateRequest: (input: ChapterRuntimeRequestInput) => ChapterRuntimeRequestInput;
   ensureNovelCharacters: (novelId: string, actionName: string, minCount?: number) => Promise<void>;
   assemble: (novelId: string, chapterId: string, request: ChapterRuntimeRequestInput) => Promise<AssembledRuntimeChapter>;
@@ -204,9 +214,15 @@ export async function runPipelineChapterWithRuntime(
     repairMode = "light_repair",
     artifactSyncMode = "adaptive",
     artifactSyncPolicy,
+    sepiaDeAi,
+    sepiaRegister,
     finalizedResultScope: _finalizedResultScope,
     ...requestInput
   } = options;
+  // sepia 开关解析优先级：调用方显式传入 > 小说级配置（开书时选定）> 默认开启。
+  const effectiveSepiaDeAi = typeof sepiaDeAi === "boolean"
+    ? sepiaDeAi
+    : (await deps.loadNovelSepiaConfig?.(novelId).catch(() => null))?.sepiaDeAi ?? true;
   const effectiveMaxRetries = Math.max(0, Math.min(maxRetries, 1));
   const repairAttemptsAllowed = autoRepair && repairMode !== "detect_only" ? effectiveMaxRetries : 0;
   if (artifactSyncPolicy === "director_v2") {
@@ -258,6 +274,30 @@ export async function runPipelineChapterWithRuntime(
           artifactSyncMode,
           syncArtifacts: false,
         });
+      }
+
+      // Sepia 去 AI 味：在「本次真正新生成草稿」后执行，位于接收闸门之前。
+      // 位于 if (!content.trim()) 分支内 —— 已有正文的重试不会重复执行；
+      // 仅当正文为空、需要重新生成时才跟随草稿一起重跑（新草稿需重新去 AI 味）。
+      // 失败一律 fail-open —— 保留原稿继续，绝不阻断章节推进。
+      if (effectiveSepiaDeAi && content.trim()) {
+        await hooks.onCheckCancelled?.();
+        const sepiaResult = await runSepiaDeAi({
+          content,
+          register: sepiaRegister,
+          provider: request.provider,
+          model: request.model,
+          novelId,
+          chapterId,
+        }).catch(() => null);
+        if (sepiaResult?.rewritten && sepiaResult.rewrittenContent) {
+          content = sepiaResult.rewrittenContent;
+          await deps.saveDraftAndArtifacts(novelId, chapterId, content, "drafted", {
+            scheduleBackgroundSync: false,
+            artifactSyncMode,
+            syncArtifacts: false,
+          });
+        }
       }
     }
 

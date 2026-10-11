@@ -97,6 +97,7 @@ export type DirectorCommand =
     storyInput: string; estimatedChapterCount: number; worldMode: "generate" | "reuse" | "skip"; targetMode: "opening" | "selected_volume";
     targetVolumeId?: string | null; provider: string; model: string; temperature?: number;
     executionRange?: {from: number; to: number}; issuePolicyMode?: "completion_first" | "quality_first";
+    sepiaDeAi?: boolean; sepiaRegister?: string;
   } }
   | { type: "resolve_gate"; runId: string; decision: "confirm" | "confirm_after_edit" | "regenerate"; expectedVersion: number; idempotencyKey: string }
   | { type: "resume"; runId: string; expectedVersion: number; idempotencyKey: string }

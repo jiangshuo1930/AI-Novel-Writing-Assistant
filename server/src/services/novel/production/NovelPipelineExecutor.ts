@@ -260,6 +260,8 @@ export class NovelPipelineExecutor {
       qualityThreshold: persistedPayload.qualityThreshold ?? options.qualityThreshold,
       repairMode: persistedPayload.repairMode ?? options.repairMode ?? "light_repair",
       artifactSyncMode: persistedPayload.artifactSyncMode ?? options.artifactSyncMode ?? "adaptive",
+      sepiaDeAi: persistedPayload.sepiaDeAi ?? options.sepiaDeAi ?? true,
+      sepiaRegister: persistedPayload.sepiaRegister ?? options.sepiaRegister,
     };
     await this.assertOwner(novelId, runtimePayload);
     const checkCancelled = async () => {
@@ -641,6 +643,8 @@ export class NovelPipelineExecutor {
                     qualityThreshold,
                     repairMode: runtimePayload.repairMode,
                     artifactSyncMode: runtimePayload.artifactSyncMode,
+                    sepiaDeAi: runtimePayload.sepiaDeAi,
+                    sepiaRegister: runtimePayload.sepiaRegister,
                     ...(runtimePayload.directorNext ? {artifactSyncPolicy: "director_v2" as const, finalizedResultScope: jobId, directorRunId: runtimePayload.directorNext.runId} : {}),
                   },
                   {

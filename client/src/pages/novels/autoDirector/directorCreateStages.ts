@@ -75,7 +75,8 @@ export function summarizeModelRunStage(input: {
   runMode: DirectorRunMode;
   runModeOptions: DirectorRunModeOption[];
   postGenerationStyleReviewEnabled: boolean;
+  sepiaDeAi: boolean;
 }): string {
   const runModeLabel = input.runModeOptions.find((option) => option.value === input.runMode)?.label ?? input.runMode;
-  return `${runModeLabel} · ${input.postGenerationStyleReviewEnabled ? "正文后检测 AI 味" : "不做正文后 AI 味检测"}`;
+  return `${runModeLabel} · ${input.postGenerationStyleReviewEnabled ? "正文后检测 AI 味" : "不做正文后 AI 味检测"} · ${input.sepiaDeAi ? "sepia 三轮去 AI 味" : "sepia 关闭"}`;
 }

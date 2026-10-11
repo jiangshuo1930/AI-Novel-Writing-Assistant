@@ -49,6 +49,7 @@ function createPipelineHarness({
   });
   const { runPipelineChapterWithRuntime } = loadRuntimeSource("chapterRuntimePipeline.ts", {
     "../../styleEngine/styleGenerationSanitizer": { detectForbiddenStyleEntities: () => [] },
+    "../../styleEngine/SepiaDeAiService": { runSepiaDeAi: async () => ({ rewritten: false, rewrittenContent: null }) },
     "./chapterEmptyContentError": { assertChapterContentNotEmpty: (value) => value, isChapterEmptyContentError: () => false },
     "./repair/chapterRepairRuntime": {
       runChapterRepairText: async () => {
@@ -60,7 +61,9 @@ function createPipelineHarness({
     "../chapterPatchRepairService": { ChapterPatchRepairFailedError: class extends Error {} },
     "./selection/ChapterRepairCandidateSelection": selectionModule,
     "./repair/ChapterRepairEligibility": loadRuntimeSource("repair/ChapterRepairEligibility.ts", {}),
-    "./proseQuality": loadRuntimeSource("proseQuality/ProseQualityDetector.ts", {}),
+    "./proseQuality": loadRuntimeSource("proseQuality/ProseQualityDetector.ts", {
+      "./sepiaProseScanner": loadRuntimeSource("proseQuality/sepiaProseScanner.ts", {}),
+    }),
     "./artifactSync/ChapterArtifactSyncResult": {
       ChapterArtifactSyncBoundaryError: class extends Error {
         constructor(result) { super(result.reason); this.result = result; }

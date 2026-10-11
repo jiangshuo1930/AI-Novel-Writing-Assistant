@@ -14,6 +14,7 @@ import type { ChapterStreamGenerationOrchestrator } from "./ChapterStreamGenerat
 import type { ChapterLifecycleService } from "./lifecycle";
 import { chapterGenerationFeed } from "../production/observation";
 import { ChapterPipelineFinalizationStore, ChapterArtifactSyncBoundaryError } from "./artifactSync";
+import { prisma } from "../../../db/prisma";
 
 export interface ChapterPipelineRuntimeAdapterDeps {
   finalizationStore?: Pick<ChapterPipelineFinalizationStore, "load" | "save">;
@@ -67,6 +68,13 @@ export class ChapterPipelineRuntimeAdapter {
           persistFinalizedChapterResult: options.artifactSyncPolicy === "director_v2"
             ? (n, c, content, result) => this.finalizationStore.save(n, c, scope!, content, result)
             : undefined,
+          loadNovelSepiaConfig: async (targetNovelId) => {
+            const novel = await prisma.novel.findUnique({
+              where: {id: targetNovelId},
+              select: {sepiaDeAi: true},
+            });
+            return novel ? {sepiaDeAi: novel.sepiaDeAi ?? true} : null;
+          },
           validateRequest: () => request,
           ensureNovelCharacters: this.deps.ensureNovelCharacters,
           assemble: async () => assembled,

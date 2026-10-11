@@ -477,6 +477,8 @@ export interface DirectorTaskSeedPayloadSnapshot {
   styleProfileId?: string | null;
   styleIntentSummary?: StyleIntentSummary | null;
   postGenerationStyleReviewEnabled?: boolean | null;
+  /** sepia 去 AI 味：正文生成后依次执行叙事架构 → 语篇流动 → 表层风格三轮。 */
+  sepiaDeAi?: boolean | null;
   taskNotice?: DirectorTaskNotice | null;
   stepReview?: {
     stepId: string;
@@ -603,6 +605,8 @@ export interface DirectorTakeoverRequest extends DirectorLLMOptions {
   autoApproval?: DirectorAutoApprovalConfig;
   styleProfileId?: string;
   postGenerationStyleReviewEnabled?: boolean;
+  /** sepia 去 AI 味：正文生成后依次执行叙事架构 → 语篇流动 → 表层风格三轮。 */
+  sepiaDeAi?: boolean;
 }
 
 export interface DirectorTakeoverResponse {
@@ -646,6 +650,10 @@ export interface DirectorProjectContextInput {
   emotionIntensity?: EmotionIntensity;
   aiFreedom?: AIFreedom;
   postGenerationStyleReviewEnabled?: boolean;
+  /** sepia 去 AI 味：正文生成后、接收闸门前依次执行 sepia 三轮（叙事架构 → 语篇流动 → 表层风格）。未传时服务端默认为开启。 */
+  sepiaDeAi?: boolean;
+  /** sepia 目标语域，默认「中文小说」。 */
+  sepiaRegister?: string;
   defaultChapterLength?: number;
   estimatedChapterCount?: number;
   projectStatus?: ProjectProgressStatus;

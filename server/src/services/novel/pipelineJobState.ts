@@ -250,6 +250,8 @@ export function parsePipelinePayload(payload: string | null | undefined): Pipeli
           ? parsed.repairMode
           : undefined,
       artifactSyncMode: normalizeArtifactSyncMode(parsed.artifactSyncMode),
+      sepiaDeAi: typeof parsed.sepiaDeAi === "boolean" ? parsed.sepiaDeAi : undefined,
+      sepiaRegister: typeof parsed.sepiaRegister === "string" ? parsed.sepiaRegister : undefined,
       controlPolicy: normalizeControlPolicy(parsed.controlPolicy),
       issueGovernanceVersion: parsed.issueGovernanceVersion === 1 ? 1 : undefined,
       issuePolicySnapshot: normalizeIssuePolicy(parsed.issuePolicySnapshot),
@@ -284,6 +286,8 @@ export function stringifyPipelinePayload(input: PipelinePayload): string {
     qualityThreshold: input.qualityThreshold ?? null,
     repairMode: input.repairMode ?? "light_repair",
     artifactSyncMode: input.artifactSyncMode ?? "adaptive",
+    sepiaDeAi: input.sepiaDeAi ?? true,
+    ...(input.sepiaRegister?.trim() ? { sepiaRegister: input.sepiaRegister.trim() } : {}),
     ...(input.controlPolicy ? { controlPolicy: normalizeControlPolicy(input.controlPolicy) ?? input.controlPolicy } : {}),
     ...(input.issueGovernanceVersion === 1 && input.issuePolicySnapshot
       ? {

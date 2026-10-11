@@ -249,6 +249,8 @@ export interface Novel {
   emotionIntensity?: EmotionIntensity | null;
   aiFreedom?: AIFreedom | null;
   postGenerationStyleReviewEnabled: boolean;
+  /** sepia 去 AI 味：正文生成后依次执行叙事架构 → 语篇流动 → 表层风格三轮。 */
+  sepiaDeAi: boolean;
   defaultChapterLength?: number | null;
   estimatedChapterCount?: number | null;
   projectStatus?: ProjectProgressStatus | null;

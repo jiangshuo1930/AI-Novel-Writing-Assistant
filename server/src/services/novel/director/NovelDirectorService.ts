@@ -674,6 +674,7 @@ export class NovelDirectorService {
       ...takeoverDirectorInput,
       styleProfileId: input.styleProfileId ?? takeoverDirectorInput.styleProfileId,
       postGenerationStyleReviewEnabled: input.postGenerationStyleReviewEnabled ?? takeoverDirectorInput.postGenerationStyleReviewEnabled,
+      sepiaDeAi: input.sepiaDeAi ?? takeoverDirectorInput.sepiaDeAi,
       autoExecutionPlan: input.autoExecutionPlan,
       autoApproval: input.autoApproval,
       provider: input.provider ?? takeoverDirectorInput.provider,
@@ -688,6 +689,9 @@ export class NovelDirectorService {
       await this.novelService.updateNovel(input.novelId, {
         postGenerationStyleReviewEnabled: input.postGenerationStyleReviewEnabled,
       });
+    }
+    if (typeof input.sepiaDeAi === "boolean") {
+      await this.novelService.updateNovel(input.novelId, { sepiaDeAi: input.sepiaDeAi });
     }
     await this.ensurePrimaryNovelStyleBinding(input.novelId, directorInput.styleProfileId);
     const takeoverWorkspaceAnalysis = await this.directorRuntime.analyzeWorkspace({

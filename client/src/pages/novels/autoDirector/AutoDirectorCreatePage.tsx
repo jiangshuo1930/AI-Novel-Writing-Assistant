@@ -480,6 +480,7 @@ function AutoDirectorCreatePage() {
       runMode: controller.runMode,
       runModeOptions: controller.runModeOptions,
       postGenerationStyleReviewEnabled: controller.directorBasicForm.postGenerationStyleReviewEnabled,
+      sepiaDeAi: controller.directorBasicForm.sepiaDeAi,
     }),
     candidates: controller.batches.length > 0
       ? `已生成 ${controller.batches.length} 批方向候选`

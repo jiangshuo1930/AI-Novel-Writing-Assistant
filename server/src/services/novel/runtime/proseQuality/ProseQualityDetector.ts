@@ -2,6 +2,7 @@ import type {
   RuntimeAuditIssue,
   RuntimeAuditReport,
 } from "@ai-novel/shared/types/chapterRuntime";
+import { scanSepiaSurface, type SegmentedProseQualityCode } from "./sepiaProseScanner";
 
 export type ProseQualityIssueCode =
   | "prose_negative_flip"
@@ -12,7 +13,8 @@ export type ProseQualityIssueCode =
   | "prose_truncation"
   | "prose_ai_self_reference"
   | "prose_placeholder_leak"
-  | "prose_engineering_term_leak";
+  | "prose_engineering_term_leak"
+  | SegmentedProseQualityCode;
 
 export interface ProseQualityFinding {
   code: ProseQualityIssueCode;
@@ -85,6 +87,12 @@ export function detectProseQuality(content: string): ProseQualityReport {
     scanEngineeringTermLeak(segment, addFinding);
     scanPeriodStutter(segment, addFinding);
     scanLongParagraph(segment, addFinding);
+  }
+
+  // sepia 表层确定性检查：与既有 prose_* 同一命名空间，
+  // 随同一 mode_fit 审计报告进入接收闸门，复用既有修文链路。
+  for (const finding of scanSepiaSurface(segments)) {
+    addFinding(finding);
   }
 
   scanVerbatimRepeat(segments, addFinding);
