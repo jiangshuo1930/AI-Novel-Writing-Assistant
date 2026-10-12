@@ -33,7 +33,16 @@ export class DirectorWorker {
     for (let offset = 0; ; offset += pageSize) {
       const candidates = await this.deps.runRepository.listLeaseCandidates(now, pageSize, this.deps.runtime.workerId(), offset);
       for (const runId of candidates) {
-        if (this.deps.canExecute && !await this.deps.canExecute(runId)) continue;
+        if (this.deps.canExecute) {
+          // 单条候选的归属或数据异常不得中断整个 worker 轮询循环：跳过它，继续处理后面的 run。
+          let executable = false;
+          try {
+            executable = await this.deps.canExecute(runId);
+          } catch {
+            continue;
+          }
+          if (!executable) continue;
+        }
         const acquired = await this.deps.runRepository.acquireLease(
           runId,
           this.deps.runtime.workerId(),
