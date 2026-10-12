@@ -165,3 +165,20 @@ test("invalid persisted facts pause immediately while error text alone follows t
     }
   }
 });
+
+test("a candidate whose ownership check throws is skipped instead of killing the worker loop", async () => {
+  const harness = createHarness();
+  harness.repository.listLeaseCandidates = async () => ["poisoned", "owned"];
+  const worker = new DirectorWorker({
+    runRepository: harness.repository,
+    executor: harness.executor,
+    runtime: harness.runtime("worker"),
+    canExecute: async (id) => {
+      if (id === "poisoned") throw new Error("找不到这本小说。");
+      return id === "owned";
+    },
+  });
+  assert.equal(await worker.tick(), true);
+  assert.deepEqual(harness.executions, ["owned"]);
+  assert.deepEqual([...harness.leases.keys()], ["owned"]);
+});

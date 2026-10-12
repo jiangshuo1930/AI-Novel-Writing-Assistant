@@ -112,7 +112,9 @@ export function createDirectorProductionOptions(): DirectorNextServiceOptions {
       assertRun: assertV2RunExecution,
       canRun: async runId => {
         try {await assertV2RunExecution(runId); return true;} catch (error) {
-          if (error instanceof AppError && error.statusCode === 409) return false;
+          // 归属冲突（409）、小说已删除（404）、短篇不适用于导演（400）等，都属于“这条 run 不该由本 worker 执行”：
+          // 返回 false 跳过该候选即可，不得向上抛出——否则会终止整个 worker 轮询循环。
+          if (error instanceof AppError) return false;
           throw error;
         }
       },
