@@ -10,7 +10,11 @@ import {
   type ChapterArtifactSyncResult,
 } from "./artifactSync/ChapterArtifactSyncResult";
 import { detectForbiddenStyleEntities } from "../../styleEngine/styleGenerationSanitizer";
-import { runSepiaDeAi } from "../../styleEngine/SepiaDeAiService";
+import {
+  applySepiaDeAiToChapter,
+  resolveSepiaDeAiEnabled,
+  type LoadNovelSepiaConfig,
+} from "./sepiaDeAiRuntime";
 import {
   assertChapterContentNotEmpty,
   isChapterEmptyContentError,
@@ -59,8 +63,9 @@ export interface PipelineRuntimeInput extends ChapterRuntimeRequestInput {
   qualityThreshold?: number;
   repairMode?: "detect_only" | "light_repair" | "heavy_repair" | "continuity_only" | "character_only" | "ending_only";
   /**
-   * Sepia 去 AI 味：在草稿生成后、接收闸门之前，对正文执行 sepia 完整两阶段
-   * （诊断 → 按最深一层优先逐条修）。默认关闭；开启后失败一律 fail-open 保留原稿。
+   * Sepia 去 AI 味：在草稿生成后、接收闸门之前依次执行 sepia 三轮
+   * （叙事架构 → 语篇流动 → 表层风格）。未传时回退小说级配置（开书时选定），
+   * 再回退默认开启；失败一律 fail-open 保留原稿。
    */
   sepiaDeAi?: boolean;
   /** sepia 目标语域，默认「中文小说」。 */
@@ -134,7 +139,7 @@ interface RunPipelineChapterDeps {
   loadFinalizedChapterResult?: (novelId: string, chapterId: string) => Promise<{content: string; result: PipelineRuntimeResult} | null>;
   persistFinalizedChapterResult?: (novelId: string, chapterId: string, content: string, result: PipelineRuntimeResult) => Promise<void>;
   /** 小说级 sepia 开关：调用方 payload 未显式指定 sepiaDeAi 时作为兜底读取（开书时选定的本书配置）。 */
-  loadNovelSepiaConfig?: (novelId: string) => Promise<{sepiaDeAi: boolean} | null>;
+  loadNovelSepiaConfig?: LoadNovelSepiaConfig;
   validateRequest: (input: ChapterRuntimeRequestInput) => ChapterRuntimeRequestInput;
   ensureNovelCharacters: (novelId: string, actionName: string, minCount?: number) => Promise<void>;
   assemble: (novelId: string, chapterId: string, request: ChapterRuntimeRequestInput) => Promise<AssembledRuntimeChapter>;
@@ -228,9 +233,10 @@ export async function runPipelineChapterWithRuntime(
     ...requestInput
   } = options;
   // sepia 开关解析优先级：调用方显式传入 > 小说级配置（开书时选定）> 默认开启。
-  const effectiveSepiaDeAi = typeof sepiaDeAi === "boolean"
-    ? sepiaDeAi
-    : (await deps.loadNovelSepiaConfig?.(novelId).catch(() => null))?.sepiaDeAi ?? true;
+  const effectiveSepiaDeAi = await resolveSepiaDeAiEnabled(
+    { novelId, sepiaDeAi },
+    deps.loadNovelSepiaConfig,
+  );
   const effectiveMaxRetries = Math.max(0, Math.min(maxRetries, 1));
   const repairAttemptsAllowed = autoRepair && repairMode !== "detect_only" ? effectiveMaxRetries : 0;
   if (artifactSyncPolicy === "director_v2") {
@@ -290,18 +296,18 @@ export async function runPipelineChapterWithRuntime(
       // 位于 if (!content.trim()) 分支内 —— 已有正文的重试不会重复执行；
       // 仅当正文为空、需要重新生成时才跟随草稿一起重跑（新草稿需重新去 AI 味）。
       // 失败一律 fail-open —— 保留原稿继续，绝不阻断章节推进。
-      if (effectiveSepiaDeAi && content.trim()) {
+      if (effectiveSepiaDeAi) {
         await hooks.onCheckCancelled?.();
-        const sepiaResult = await runSepiaDeAi({
-          content,
-          register: sepiaRegister,
-          provider: request.provider,
-          model: request.model,
+        const sepia = await applySepiaDeAiToChapter({
           novelId,
           chapterId,
-        }).catch(() => null);
-        if (sepiaResult?.rewritten && sepiaResult.rewrittenContent) {
-          content = sepiaResult.rewrittenContent;
+          content,
+          sepiaRegister,
+          provider: request.provider,
+          model: request.model,
+        });
+        if (sepia.rewritten) {
+          content = sepia.content;
           await deps.saveDraftAndArtifacts(novelId, chapterId, content, "drafted", {
             scheduleBackgroundSync: false,
             artifactSyncMode,
@@ -475,6 +481,7 @@ export async function runPipelineChapterWithRuntime(
       content,
       issues: latestIssues,
       runtimePackage: latestResult.runtimePackage,
+      sepia: { enabled: effectiveSepiaDeAi, register: sepiaRegister },
       options: {
         provider: request.provider,
         model: request.model,
@@ -724,6 +731,13 @@ async function repairDraftContent(input: {
   content: string;
   issues: ReviewIssue[];
   runtimePackage: ChapterRuntimePackage;
+  /**
+   * 修文以 sepia 为基准：开启时在「原 patch/heavy 修完结构」之后，再跑 sepia 三轮
+   * 去 AI 味（架构 → 语篇 → 表层）收尾。两者串联、顺序不可颠倒 —— sepia 只治
+   * AI 味、不治结构性问题（剧情 / 连续性 / 时间线 / 字数），且 heavy 重写会整体
+   * 覆盖此前的风格成果，故风格必须放在最后一道。
+   */
+  sepia?: { enabled: boolean; register?: string };
   options: {
     provider?: LLMProvider;
     model?: string;
@@ -736,6 +750,7 @@ async function repairDraftContent(input: {
   rewriteGuard?: StyleRewriteGuard;
   styleRewriteBaseline?: StyleRewriteBaseline;
 }> {
+  // 结构优先：先跑原 patch/heavy 链，修剧情 / 连续性 / 时间线 / 字数这类结构性问题。
   let repaired: Awaited<ReturnType<typeof runChapterRepairText>>;
   try {
     repaired = await runChapterRepairText({
@@ -770,8 +785,26 @@ async function repairDraftContent(input: {
       },
     };
   }
+  // 文笔收尾：在已修好的结构上跑 sepia 三轮去 AI 味（架构 → 语篇 → 表层）。
+  // 顺序不可颠倒 —— sepia 只治 AI 味、不治结构；heavy 重写会整体覆盖风格成果。
+  // fail-open：sepia 无改动 / 失败（返回 rewritten:false）时保留 patch 产出。
+  let content = repaired.content.trim() || input.content;
+  if (input.sepia?.enabled) {
+    const sepia = await applySepiaDeAiToChapter({
+      novelId: input.runtimePackage.novelId,
+      chapterId: input.runtimePackage.chapterId,
+      content,
+      sepiaRegister: input.sepia.register,
+      provider: input.options.provider,
+      model: input.options.model,
+    });
+    if (sepia.rewritten) {
+      content = sepia.content;
+    }
+  }
+
   return {
-    content: repaired.content.trim() ? repaired.content : input.content,
+    content,
     recoverableFailure: null,
     rewriteGuard: repaired.rewriteGuard,
     styleRewriteBaseline: repaired.styleRewriteBaseline,

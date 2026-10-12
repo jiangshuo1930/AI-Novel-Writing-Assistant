@@ -19,7 +19,7 @@ import { ChapterRepairStreamRuntime } from "./repair/ChapterRepairStreamRuntime"
 import { ChapterQualityGateService } from "./ChapterQualityGateService";
 import { ChapterContentFinalizationService } from "./ChapterContentFinalizationService";
 import { ChapterStreamGenerationOrchestrator } from "./ChapterStreamGenerationOrchestrator";
-import { ChapterPipelineRuntimeAdapter } from "./ChapterPipelineRuntimeAdapter";
+import { ChapterPipelineRuntimeAdapter, createPrismaNovelSepiaConfigLoader } from "./ChapterPipelineRuntimeAdapter";
 import {
   chapterTimelineFinalizationService,
   type ChapterTimelineFinalizationService,
@@ -60,6 +60,8 @@ interface ChapterRuntimeCoordinatorDeps {
     ChapterLifecycleService,
     "saveWorkingContent" | "markChapterStatus" | "markGenerationState"
   >;
+  /** 小说级 sepia 开关读取（默认查 Novel.sepiaDeAi），入口 A/B 共用。 */
+  loadNovelSepiaConfig?: (novelId: string) => Promise<{ sepiaDeAi: boolean } | null>;
 }
 
 export class ChapterRuntimeCoordinator {
@@ -83,7 +85,7 @@ export class ChapterRuntimeCoordinator {
     const acceptanceAssessmentService = deps.acceptanceAssessmentService ?? new ChapterAcceptanceAssessmentService();
     const ensureNovelCharacters = deps.ensureNovelCharacters ?? this.ensureNovelCharacters.bind(this);
     const validateRequest = deps.validateRequest ?? ((input) => chapterRuntimeRequestSchema.parse(input));
-
+    const loadNovelSepiaConfig = deps.loadNovelSepiaConfig ?? createPrismaNovelSepiaConfigLoader();
     this.qualityGateService = new ChapterQualityGateService({
       acceptanceAssessmentService,
     });
@@ -104,6 +106,7 @@ export class ChapterRuntimeCoordinator {
       agentRuntime,
       validateRequest,
       ensureNovelCharacters,
+      loadNovelSepiaConfig,
     });
     this.pipelineAdapter = new ChapterPipelineRuntimeAdapter({
       streamOrchestrator: this.streamOrchestrator,
@@ -111,6 +114,7 @@ export class ChapterRuntimeCoordinator {
       contentFinalizationService: this.contentFinalizationService,
       lifecycleService,
       ensureNovelCharacters,
+      loadNovelSepiaConfig,
     });
     this.repairStreamRuntime = new ChapterRepairStreamRuntime({
       assembler,

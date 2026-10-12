@@ -8,7 +8,7 @@ test('V2 adapter resumes finalized assets before context assembly, generation or
   const store = {load: async (...args) => {events.push(['load', ...args]); return {content: 'final repaired draft', result};}, save: async () => {throw Error('cannot save another finalization');}};
   const runtime = loadRuntimeSource('chapterRuntimePipeline.ts', {
     '../../styleEngine/styleGenerationSanitizer': {}, './chapterEmptyContentError': {},
-    '../../styleEngine/SepiaDeAiService': {runSepiaDeAi: async () => ({rewritten: false, rewrittenContent: null})},
+    './sepiaDeAiRuntime': {resolveSepiaDeAiEnabled: async () => true, applySepiaDeAiToChapter: async (input) => ({content: input.content, rewritten: false})},
     './repair/chapterRepairRuntime': {}, './repair/ChapterRepairEligibility': {}, './proseQuality': {},
     '../chapterPatchRepairService': {}, './selection/ChapterRepairCandidateSelection': {},
     './artifactSync/ChapterArtifactSyncResult': {ChapterArtifactSyncBoundaryError: class extends Error {}},

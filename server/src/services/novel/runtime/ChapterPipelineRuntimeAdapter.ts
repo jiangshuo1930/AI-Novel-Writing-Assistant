@@ -15,6 +15,22 @@ import type { ChapterLifecycleService } from "./lifecycle";
 import { chapterGenerationFeed } from "../production/observation";
 import { ChapterPipelineFinalizationStore, ChapterArtifactSyncBoundaryError } from "./artifactSync";
 import { prisma } from "../../../db/prisma";
+import type { LoadNovelSepiaConfig } from "./sepiaDeAiRuntime";
+
+/**
+ * 默认的小说级 sepia 开关读取：查 Novel.sepiaDeAi。
+ * 查不到返回 null，由 resolveSepiaDeAiEnabled 回退默认开启。
+ * 入口 A（本适配器）与入口 B（ChapterStreamGenerationOrchestrator）共用同一实现。
+ */
+export function createPrismaNovelSepiaConfigLoader(): LoadNovelSepiaConfig {
+  return async (novelId: string) => {
+    const novel = await prisma.novel.findUnique({
+      where: { id: novelId },
+      select: { sepiaDeAi: true },
+    });
+    return novel ? { sepiaDeAi: novel.sepiaDeAi ?? true } : null;
+  };
+}
 
 export interface ChapterPipelineRuntimeAdapterDeps {
   finalizationStore?: Pick<ChapterPipelineFinalizationStore, "load" | "save">;
@@ -29,15 +45,19 @@ export interface ChapterPipelineRuntimeAdapterDeps {
   >;
   lifecycleService: Pick<ChapterLifecycleService, "markGenerationState">;
   ensureNovelCharacters: (novelId: string, actionName: string, minCount?: number) => Promise<void>;
+  /** 小说级 sepia 开关读取；默认查 Novel.sepiaDeAi。 */
+  loadNovelSepiaConfig?: LoadNovelSepiaConfig;
 }
 
 export class ChapterPipelineRuntimeAdapter {
   private readonly deps: ChapterPipelineRuntimeAdapterDeps;
   private readonly finalizationStore: Pick<ChapterPipelineFinalizationStore, "load" | "save">;
+  private readonly loadNovelSepiaConfig: LoadNovelSepiaConfig;
 
   constructor(deps: ChapterPipelineRuntimeAdapterDeps) {
     this.deps = deps;
     this.finalizationStore = deps.finalizationStore ?? new ChapterPipelineFinalizationStore();
+    this.loadNovelSepiaConfig = deps.loadNovelSepiaConfig ?? createPrismaNovelSepiaConfigLoader();
   }
 
   async runPipelineChapter(
@@ -68,13 +88,7 @@ export class ChapterPipelineRuntimeAdapter {
           persistFinalizedChapterResult: options.artifactSyncPolicy === "director_v2"
             ? (n, c, content, result) => this.finalizationStore.save(n, c, scope!, content, result)
             : undefined,
-          loadNovelSepiaConfig: async (targetNovelId) => {
-            const novel = await prisma.novel.findUnique({
-              where: {id: targetNovelId},
-              select: {sepiaDeAi: true},
-            });
-            return novel ? {sepiaDeAi: novel.sepiaDeAi ?? true} : null;
-          },
+          loadNovelSepiaConfig: (targetNovelId) => this.loadNovelSepiaConfig(targetNovelId),
           validateRequest: () => request,
           ensureNovelCharacters: this.deps.ensureNovelCharacters,
           assemble: async () => assembled,
