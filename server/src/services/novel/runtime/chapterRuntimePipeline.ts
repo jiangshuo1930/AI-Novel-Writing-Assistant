@@ -732,10 +732,8 @@ async function repairDraftContent(input: {
   issues: ReviewIssue[];
   runtimePackage: ChapterRuntimePackage;
   /**
-   * 修文以 sepia 为基准：开启时在「原 patch/heavy 修完结构」之后，再跑 sepia 三轮
-   * 去 AI 味（架构 → 语篇 → 表层）收尾。两者串联、顺序不可颠倒 —— sepia 只治
-   * AI 味、不治结构性问题（剧情 / 连续性 / 时间线 / 字数），且 heavy 重写会整体
-   * 覆盖此前的风格成果，故风格必须放在最后一道。
+   * ⚠️ sepia 收尾已停用（2026-10-13）：参数保留仅为调用点兼容与日后恢复，
+   * 当前函数体内不再消费该参数，修文链退回纯 patch/heavy（详见函数体内注释）。
    */
   sepia?: { enabled: boolean; register?: string };
   options: {
@@ -788,20 +786,28 @@ async function repairDraftContent(input: {
   // 文笔收尾：在已修好的结构上跑 sepia 三轮去 AI 味（架构 → 语篇 → 表层）。
   // 顺序不可颠倒 —— sepia 只治 AI 味、不治结构；heavy 重写会整体覆盖风格成果。
   // fail-open：sepia 无改动 / 失败（返回 rewritten:false）时保留 patch 产出。
-  let content = repaired.content.trim() || input.content;
-  if (input.sepia?.enabled) {
-    const sepia = await applySepiaDeAiToChapter({
-      novelId: input.runtimePackage.novelId,
-      chapterId: input.runtimePackage.chapterId,
-      content,
-      sepiaRegister: input.sepia.register,
-      provider: input.options.provider,
-      model: input.options.model,
-    });
-    if (sepia.rewritten) {
-      content = sepia.content;
-    }
-  }
+  //
+  // ⚠️ 已停用（2026-10-13），代码保留以便日后恢复。实测依据：
+  //   patch/heavy 修完后 blocking finding 已清零、专名正确（第1章 2077字/0 finding/陈默×13）；
+  //   sepia 收尾未解决任何问题，反而改错主角名（陈默→陈克）并再压掉约 15% 篇幅，
+  //   导致候选稿 blocking 数未净减少 → 被 selectChapterRepairCandidate 判为更差整轮丢弃
+  //   → 原 finding 永久残留 → 跨章污染 → 自锁（下一章被同样 3 条 finding 逼着修）。
+  //   去掉后候选稿 blocking = 0 < 原稿 3，命中择优第 5 条被采纳，且每章省 3 次调用（约 90s）。
+  //   如需恢复：取消下方注释即可（content 需由 const 改回 let）。
+  const content = repaired.content.trim() || input.content;
+  // if (input.sepia?.enabled) {
+  //   const sepia = await applySepiaDeAiToChapter({
+  //     novelId: input.runtimePackage.novelId,
+  //     chapterId: input.runtimePackage.chapterId,
+  //     content,
+  //     sepiaRegister: input.sepia.register,
+  //     provider: input.options.provider,
+  //     model: input.options.model,
+  //   });
+  //   if (sepia.rewritten) {
+  //     content = sepia.content;
+  //   }
+  // }
 
   return {
     content,
