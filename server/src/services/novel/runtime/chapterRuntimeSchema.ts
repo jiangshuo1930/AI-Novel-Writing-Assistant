@@ -22,6 +22,13 @@ export const chapterRuntimeRequestSchema = z.object({
   taskStyleProfileId: z.string().trim().optional(),
   artifactSyncMode: z.enum(["adaptive", "deferred", "strict"]).optional(),
   controlPolicy: chapterRuntimeControlPolicySchema.optional(),
+  /**
+   * sepia 去 AI 味：单章流式生成时，在「生成后、接收闸门之前」执行三轮
+   * （叙事架构 → 语篇流动 → 表层风格）。未传时回退到小说级配置，再回退默认开启。
+   */
+  sepiaDeAi: z.boolean().optional(),
+  /** sepia 目标语域，默认「中文小说」。 */
+  sepiaRegister: z.string().trim().max(40).optional(),
 });
 
 export type ChapterRuntimeRequestInput = z.infer<typeof chapterRuntimeRequestSchema>;

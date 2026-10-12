@@ -4,8 +4,7 @@ const vm = require("node:vm");
 const ts = require("typescript");
 
 // Only explicit doubles can cross the module boundary: no production DB or LLM imports.
-function loadRuntimeSource(filename, imports) {
-  const sourcePath = path.resolve(__dirname, "../../src/services/novel/runtime", filename);
+function loadTsModule(sourcePath, imports) {
   const source = ts.transpileModule(fs.readFileSync(sourcePath, "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
     fileName: sourcePath,
@@ -21,11 +20,21 @@ function loadRuntimeSource(filename, imports) {
   return exports;
 }
 
+function loadRuntimeSource(filename, imports) {
+  return loadTsModule(
+    path.resolve(__dirname, "../../src/services/novel/runtime", filename),
+    imports,
+  );
+}
+
 function createPipelineHarness({
   content = "original draft",
   scores = [90],
   repairError,
+  patchRepairFailure = false,
   repairContent = "repair candidate",
+  sepiaRewrite,
+  sepiaEnabled = true,
   acceptanceMeta = {},
   acceptanceAssessment,
   recheckAssessment,
@@ -39,6 +48,10 @@ function createPipelineHarness({
   const committedContents = [];
   const syncedContents = [];
   const reviewBaselines = [];
+  // sepia 每次调用收到的入参正文（按调用顺序）。用于断言
+  // 「sepia 收尾跑在原 patch/heavy 的产出上」—— 这是修文顺序的直接证据。
+  const sepiaCalls = [];
+  const ChapterPatchRepairFailedError = class extends Error {};
   let persisted = content;
   let reviewIndex = 0;
   let budget = 0;
@@ -49,16 +62,25 @@ function createPipelineHarness({
   });
   const { runPipelineChapterWithRuntime } = loadRuntimeSource("chapterRuntimePipeline.ts", {
     "../../styleEngine/styleGenerationSanitizer": { detectForbiddenStyleEntities: () => [] },
-    "../../styleEngine/SepiaDeAiService": { runSepiaDeAi: async () => ({ rewritten: false, rewrittenContent: null }) },
+    "./sepiaDeAiRuntime": {
+      resolveSepiaDeAiEnabled: async () => sepiaEnabled,
+      applySepiaDeAiToChapter: async (input) => {
+        sepiaCalls.push(input.content);
+        return sepiaRewrite
+          ? { content: sepiaRewrite, rewritten: true }
+          : { content: input.content, rewritten: false };
+      },
+    },
     "./chapterEmptyContentError": { assertChapterContentNotEmpty: (value) => value, isChapterEmptyContentError: () => false },
     "./repair/chapterRepairRuntime": {
       runChapterRepairText: async () => {
         events.push("repair");
+        if (patchRepairFailure) throw new ChapterPatchRepairFailedError("patch plan invalid");
         if (repairError) throw repairError;
         return { content: repairContent };
       },
     },
-    "../chapterPatchRepairService": { ChapterPatchRepairFailedError: class extends Error {} },
+    "../chapterPatchRepairService": { ChapterPatchRepairFailedError },
     "./selection/ChapterRepairCandidateSelection": selectionModule,
     "./repair/ChapterRepairEligibility": loadRuntimeSource("repair/ChapterRepairEligibility.ts", {}),
     "./proseQuality": loadRuntimeSource("proseQuality/ProseQualityDetector.ts", {
@@ -130,6 +152,7 @@ function createPipelineHarness({
   return {
     events,
     reviewBaselines,
+    sepiaCalls,
     get content() { return persisted; },
     get budget() { return budget; },
     get approved() { return approved; },
@@ -142,4 +165,4 @@ function createPipelineHarness({
   };
 }
 
-module.exports = { loadRuntimeSource, createPipelineHarness };
+module.exports = { loadRuntimeSource, loadTsModule, createPipelineHarness };

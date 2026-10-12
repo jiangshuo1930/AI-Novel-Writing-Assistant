@@ -17,6 +17,11 @@ import {
   ChapterContentFinalizationService,
   type FinalizeChapterContentResult,
 } from "./ChapterContentFinalizationService";
+import {
+  applySepiaDeAiToChapter,
+  resolveSepiaDeAiEnabled,
+  type LoadNovelSepiaConfig,
+} from "./sepiaDeAiRuntime";
 
 export interface ChapterStreamGenerationAgentRuntime {
   createChapterGenRun: (novelId: string, chapterId: string, chapterOrder: number) => Promise<string>;
@@ -31,6 +36,8 @@ export interface ChapterStreamGenerationOrchestratorDeps {
   agentRuntime: ChapterStreamGenerationAgentRuntime;
   validateRequest: (input: ChapterRuntimeRequestInput) => ChapterRuntimeRequestInput;
   ensureNovelCharacters: (novelId: string, actionName: string, minCount?: number) => Promise<void>;
+  /** 小说级 sepia 开关：request 未显式指定 sepiaDeAi 时作为兜底读取（开书时选定的本书配置）。 */
+  loadNovelSepiaConfig?: LoadNovelSepiaConfig;
 }
 
 export interface PreparedRuntimeChapter {
@@ -93,6 +100,21 @@ export class ChapterStreamGenerationOrchestrator {
           fallbackContent: fullContent,
         });
         const generatedContent = normalized.finalContent;
+        // Sepia 去 AI 味：与批量流水线同一位置语义——「草稿生成后、接收闸门之前」。
+        // 流式场景下正文已推送给前端，此处对完整稿执行三轮后以改写稿进入接收闸门。
+        const content = await this.applySepiaDeAi({
+          novelId,
+          chapterId,
+          request,
+          content: generatedContent,
+          emitRunStatus: (message) => this.emitRunStatus(helpers, {
+            type: "run_status",
+            runId: runStatusId,
+            status: "running",
+            phase: "finalizing",
+            message,
+          }),
+        });
         this.emitRunStatus(helpers, {
           type: "run_status",
           runId: runStatusId,
@@ -105,7 +127,7 @@ export class ChapterStreamGenerationOrchestrator {
           chapterId,
           request,
           contextPackage: assembled.contextPackage,
-          content: generatedContent,
+          content,
           lengthControl: normalized?.lengthControl,
           runId: traceRunId,
           startMs,
@@ -323,6 +345,39 @@ export class ChapterStreamGenerationOrchestrator {
       rawContentLength: input.error.details.rawLength,
       source: input.error.details.source,
     });
+  }
+
+  /**
+   * 单章流式生成后的 sepia 三轮去 AI 味。
+   * 开关解析：request 显式 sepiaDeAi > 小说级配置 > 默认开启；全程 fail-open。
+   */
+  private async applySepiaDeAi(input: {
+    novelId: string;
+    chapterId: string;
+    request: ChapterRuntimeRequestInput;
+    content: string;
+    emitRunStatus: (message: string) => void;
+  }): Promise<string> {
+    if (!input.content.trim()) {
+      return input.content;
+    }
+    const enabled = await resolveSepiaDeAiEnabled(
+      { novelId: input.novelId, sepiaDeAi: input.request.sepiaDeAi },
+      this.deps.loadNovelSepiaConfig,
+    );
+    if (!enabled) {
+      return input.content;
+    }
+    input.emitRunStatus("正在执行 sepia 三轮去 AI 味（叙事架构 → 语篇流动 → 表层风格）。");
+    const result = await applySepiaDeAiToChapter({
+      novelId: input.novelId,
+      chapterId: input.chapterId,
+      content: input.content,
+      sepiaRegister: input.request.sepiaRegister,
+      provider: input.request.provider,
+      model: input.request.model,
+    });
+    return result.content;
   }
 
   private emitRunStatus(
