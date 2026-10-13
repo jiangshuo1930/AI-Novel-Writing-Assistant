@@ -118,10 +118,12 @@ test("引号内命中仍被上报：isInsideQuote 守卫对阈值判定无效（
   // 但 countMatches 统计命中时未剔除引号内容，阈值判定发生在 firstHit 之前，
   // 导致仅存在于引号内的命中依然满足 threshold 并产出 finding（excerpt 回退为整段）。
   // 该用例锁定当前行为；修复后应改为断言 findings 为空。
-  const findings = scanSepiaSurface([seg("她说：「那不是冷漠，而是克制。」")]);
+  // 样本用「既…也…」—— sepia 独有模板之一（「不是…而是…」已交回上游
+  // prose_negative_flip 处理，见 sepiaProseScanner.ts 中 SYNTAX_TEMPLATE_PATTERNS 的说明）。
+  const findings = scanSepiaSurface([seg("她说：「他既没有说话，也没有离开。」")]);
   assert.deepEqual(codes(findings), ["prose_sepia_syntax_template"]);
   assert.equal(findings[0].severity, "high");
-  assert.equal(findings[0].excerpt, "她说：「那不是冷漠，而是克制。」");
+  assert.equal(findings[0].excerpt, "她说：「他既没有说话，也没有离开。」");
 });
 
 test("diagnostics 模式导出：七类规则的模式源均可读取", () => {
