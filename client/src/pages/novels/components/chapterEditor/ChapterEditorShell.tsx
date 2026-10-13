@@ -15,7 +15,7 @@ import {
   type ChapterQualityDebtDetails,
 } from "@ai-novel/shared/types/chapterQualityLoop";
 import { AlertTriangle, Loader2 } from "lucide-react";
-import { createNovelSnapshot, previewChapterAiRevision, previewChapterCursorContinuation, resolveChapterAuditIssue, reviewNovelChapter, updateNovelChapter } from "@/api/novel";
+import { createNovelSnapshot, previewChapterAiRevision, previewChapterCursorContinuation, resolveChapterAuditIssue, reviewNovelChapter, updateNovelChapterWithRebase } from "@/api/novel";
 import { queryKeys } from "@/api/queryKeys";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
@@ -111,6 +111,8 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
   const queryClient = useQueryClient();
   const lastPreviewRequestRef = useRef<ReturnType<typeof buildAiRevisionRequest> | null>(null);
   const lastContinuationRequestRef = useRef<ChapterEditorCursorContinuationRequest | null>(null);
+  /** 发起当前候选修正时定位的那张问题卡，接受保存后需要把它关掉。 */
+  const revisionDiagnosticIdRef = useRef<string | null>(null);
   const qualityDebtDetails = useMemo(
     () => readChapterQualityDebtDetails(chapter?.riskFlags),
     [chapter?.riskFlags],
@@ -148,6 +150,7 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
     setLoadedSnapshotId(null);
     lastPreviewRequestRef.current = null;
     lastContinuationRequestRef.current = null;
+    revisionDiagnosticIdRef.current = null;
   }, [chapter?.id]);
 
   useEffect(() => {
@@ -219,7 +222,11 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
           label: `chapter-editor:before-version-load:${chapter.order}:${Date.now()}`,
         });
       }
-      return updateNovelChapter(novelId, chapter.id, { content: nextContent, expectedUpdatedAt: draft.savedUpdatedAt });
+      return updateNovelChapterWithRebase(novelId, chapter.id, {
+        content: nextContent,
+        expectedUpdatedAt: draft.savedUpdatedAt,
+        expectedContent: draft.savedContent,
+      });
     },
     onMutate: () => {
       setSaveStatus("saving");
@@ -415,17 +422,35 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
     novelId, chapter, session, candidate: activeCandidate,
     selectedChangeIds: review.selectedChangeIds,
     content: contentDraft,
+    savedContent,
     sourceSnapshot: session.mode === "continuation"
       ? lastContinuationRequestRef.current?.contentSnapshot : lastPreviewRequestRef.current?.contentSnapshot,
     savedUpdatedAt: draft.savedUpdatedAt,
-    acknowledgeSave: draft.acknowledgeSave,
+    applyAcceptedContent: draft.applyAcceptedContent,
     onAccepted: async () => {
+      const sourceCardId = revisionDiagnosticIdRef.current;
+      revisionDiagnosticIdRef.current = null;
       setSaveStatus("saved");
       setSession(EMPTY_SESSION);
       setRevisionInstruction("");
+      // 已处理完的问题卡要收起来：先取消定位，再由服务端确认该问题已处理。
+      setSelectedDiagnosticId(null);
       await invalidateChapterQueries();
       await props.onChapterSaved?.();
       setLoadedSnapshotId(null);
+      const sourceCard = sourceCardId
+        ? workspace?.diagnosticCards.find((card) => card.id === sourceCardId) ?? null
+        : null;
+      if (sourceCard?.sourceIssueId) {
+        try {
+          await resolveChapterAuditIssue(novelId, sourceCard.sourceIssueId);
+          await invalidateChapterQueries();
+          onRefreshWorkspace?.();
+        } catch {
+          // 标记失败不影响正文已保存的结果，问题卡恢复定位供手动确认。
+          setSelectedDiagnosticId(sourceCard.id);
+        }
+      }
     },
   });
 
@@ -480,11 +505,14 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
       instruction?: string;
       selectionOverride?: ChapterEditorSelectionRange | null;
       task?: ChapterEditorRecommendedTask | null;
+      /** 显式传入发起本次修正的问题卡，避免同一 tick 内 setState 尚未提交导致丢失。 */
+      diagnosticCardId?: string | null;
     },
   ) => {
     const resolvedSelection = scope === "selection"
       ? getSelectionTarget(options?.selectionOverride, options?.task)
       : null;
+    revisionDiagnosticIdRef.current = options?.diagnosticCardId ?? selectedDiagnosticId;
 
     if (scope === "selection" && !resolvedSelection) {
       toast.error("请先选中正文片段，或先从问题卡定位到对应片段。");
@@ -522,6 +550,7 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
       toast.error("请先把光标放在正文中，再选择续写方向。");
       return;
     }
+    revisionDiagnosticIdRef.current = null;
     const normalizedContent = normalizeChapterContent(contentDraft);
     const cursorRange: ChapterEditorSelectionRange = {
       from: cursorOffset,
@@ -561,6 +590,7 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
     setLoadedSnapshotId(snapshotId);
     setSaveStatus("idle");
     setSession(EMPTY_SESSION);
+    revisionDiagnosticIdRef.current = null;
     setSelection(null);
     setSelectionToolbarPosition(null);
     setCursorOffset(null);
@@ -583,6 +613,7 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
     runRevision("preset", card.recommendedScope, {
       presetOperation: card.recommendedAction,
       selectionOverride: toSelectionFromRange(contentDraft, card.anchorRange ?? null),
+      diagnosticCardId: card.id,
     });
   };
 

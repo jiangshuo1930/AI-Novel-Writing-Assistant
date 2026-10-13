@@ -105,6 +105,13 @@ export interface UpdateNovelInput {
 export interface ChapterInput {
   /** Optional optimistic concurrency guard for editing a saved chapter. */
   expectedUpdatedAt?: string;
+  /**
+   * Preferred optimistic concurrency guard: the exact chapter text the client
+   * read before editing. Background artifact sync rewrites Chapter.expectation
+   * (bumping the @updatedAt row version) without touching the prose, so a
+   * timestamp alone produces false "本章保存版本已变化" conflicts.
+   */
+  expectedContent?: string;
   title: string;
   order: number;
   content?: string;

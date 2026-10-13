@@ -28,6 +28,15 @@ export function acknowledgeChapterSave(draft: ChapterDraft, submitted: string, s
   };
 }
 
+/**
+ * Accepting an AI candidate replaces the editor text with the server-confirmed
+ * content. The submitted text intentionally differs from the current draft, so
+ * unlike acknowledgeChapterSave we must not fall back to the stale draft.
+ */
+export function applyAcceptedChapter(saved: { content: string; updatedAt: string }): ChapterDraft {
+  return { content: saved.content, savedContent: saved.content, savedUpdatedAt: saved.updatedAt };
+}
+
 export function restoreChapterDraft(raw: string | null, saved: ChapterDraft): ChapterDraft {
   try {
     const value = JSON.parse(raw ?? "null");

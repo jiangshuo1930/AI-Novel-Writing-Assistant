@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { normalizeChapterText } from "@ai-novel/shared/types/chapterEditor/document";
-import { acknowledgeChapterSave, receiveChapter, restoreChapterDraft, type ChapterDraft } from "./draftState";
+import { acknowledgeChapterSave, applyAcceptedChapter, receiveChapter, restoreChapterDraft, type ChapterDraft } from "./draftState";
 
 /** Mounted once per chapter. Tab-scoped drafts survive refresh and in-app navigation. */
 export function useChapterDraft(input: {
@@ -59,6 +59,10 @@ export function useChapterDraft(input: {
     setContentDraft: (content: string) => publish({ ...current.current, content }),
     acknowledgeSave: (submitted: string, saved: { content?: string | null; updatedAt: string }) => {
       publish(acknowledgeChapterSave(current.current, submitted, { content: normalizeChapterText(saved.content), updatedAt: saved.updatedAt }));
+      setRestored(false);
+    },
+    applyAcceptedContent: (content: string, saved: { content?: string | null; updatedAt: string }) => {
+      publish(applyAcceptedChapter({ content: normalizeChapterText(saved.content ?? content), updatedAt: saved.updatedAt }));
       setRestored(false);
     },
     loadSavedVersion: () => {

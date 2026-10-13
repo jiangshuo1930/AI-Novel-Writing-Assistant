@@ -1,7 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import type { ChapterEditorCandidate } from "@ai-novel/shared/types/novel";
 import { applySelectedChapterEditorDiff, insertChapterContinuation, replaceChapterSelection } from "@ai-novel/shared/types/chapterEditor/document";
-import { createNovelSnapshot, updateNovelChapter } from "@/api/novel";
+import { createNovelSnapshot, updateNovelChapterWithRebase } from "@/api/novel";
 import { toast } from "@/components/ui/toast";
 import type { ChapterEditorSessionState } from "../chapterEditorTypes";
 
@@ -12,9 +12,10 @@ export function useCandidateAcceptance(input: {
   candidate: ChapterEditorCandidate | null;
   selectedChangeIds: ReadonlySet<string>;
   content: string;
+  savedContent: string;
   sourceSnapshot?: string;
   savedUpdatedAt: string;
-  acknowledgeSave: (content: string, saved: { content?: string | null; updatedAt: string }) => void;
+  applyAcceptedContent: (content: string, saved: { content?: string | null; updatedAt: string }) => void;
   onAccepted: () => Promise<void>;
 }) {
   return useMutation({
@@ -33,13 +34,15 @@ export function useCandidateAcceptance(input: {
       await createNovelSnapshot(input.novelId, {
         triggerType: "manual", label: `chapter-editor:${chapter.order}:${session.scope}:${Date.now()}`,
       });
-      const response = await updateNovelChapter(input.novelId, chapter.id, {
-        content: nextContent, expectedUpdatedAt: input.savedUpdatedAt,
+      const response = await updateNovelChapterWithRebase(input.novelId, chapter.id, {
+        content: nextContent,
+        expectedUpdatedAt: input.savedUpdatedAt,
+        expectedContent: input.savedContent,
       });
       return { nextContent, saved: response.data };
     },
     onSuccess: async ({ nextContent, saved }) => {
-      input.acknowledgeSave(nextContent, { content: saved?.content ?? nextContent, updatedAt: String(saved?.updatedAt ?? Date.now()) });
+      input.applyAcceptedContent(nextContent, { content: saved?.content ?? nextContent, updatedAt: String(saved?.updatedAt ?? Date.now()) });
       await input.onAccepted();
       toast.success("所选修改已保存，修改前版本可在历史中查看。");
     },

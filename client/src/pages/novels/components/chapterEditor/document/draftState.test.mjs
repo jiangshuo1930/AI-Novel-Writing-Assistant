@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { acknowledgeChapterSave, receiveChapter, restoreChapterDraft } from "./draftState.ts";
+import { acknowledgeChapterSave, applyAcceptedChapter, receiveChapter, restoreChapterDraft } from "./draftState.ts";
 
 const saved = { content: "甲\n\n乙", savedContent: "甲\n\n乙", savedUpdatedAt: "2026-10-11T00:00:00.000Z" };
 
@@ -22,6 +22,14 @@ test("save acknowledgement preserves newer local typing", () => {
   assert.deepEqual(acknowledgeChapterSave(draft, "甲\n\n刚提交", { content: "甲\n\n刚提交", updatedAt: "2026-10-11T00:02:00.000Z" }), {
     content: "甲\n\n本地继续输入",
     savedContent: "甲\n\n刚提交",
+    savedUpdatedAt: "2026-10-11T00:02:00.000Z",
+  });
+});
+
+test("accepting an AI candidate replaces the editor text with the saved version", () => {
+  assert.deepEqual(applyAcceptedChapter({ content: "甲\n\n新开场", updatedAt: "2026-10-11T00:02:00.000Z" }), {
+    content: "甲\n\n新开场",
+    savedContent: "甲\n\n新开场",
     savedUpdatedAt: "2026-10-11T00:02:00.000Z",
   });
 });

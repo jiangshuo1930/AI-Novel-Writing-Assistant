@@ -1,4 +1,5 @@
 import type { ApiResponse } from "@ai-novel/shared/types/api";
+import type { AxiosRequestConfig } from "axios";
 import type {
   TimelineCheckReport,
   TimelineContextForChapter,
@@ -14,7 +15,7 @@ import type {
   ChapterEditorRewritePreviewResponse,
   ChapterStatus,
 } from "@ai-novel/shared/types/novel";
-import { apiClient } from "../client";
+import { apiClient, type ApiHttpError } from "../client";
 
 export async function getNovelChapters(id: string) {
   const { data } = await apiClient.get<ApiResponse<Chapter[]>>(`/novels/${id}/chapters`);
@@ -52,6 +53,7 @@ export async function updateNovelChapter(
   chapterId: string,
   payload: Partial<{
     expectedUpdatedAt: string;
+    expectedContent: string;
     title: string;
     order: number;
     content: string;
@@ -70,9 +72,43 @@ export async function updateNovelChapter(
     pacingScore: number;
     riskFlags: string;
   }>,
+  config?: AxiosRequestConfig,
 ) {
-  const { data } = await apiClient.put<ApiResponse<Chapter>>(`/novels/${id}/chapters/${chapterId}`, payload);
+  const { data } = await apiClient.put<ApiResponse<Chapter>>(`/novels/${id}/chapters/${chapterId}`, payload, config);
   return data;
+}
+
+/**
+ * 保存章节正文，并在「版本令牌过期」时自动重基准一次。
+ *
+ * 背景资产同步会在正文写入之后异步重写 `Chapter.expectation`，因为 `Chapter.updatedAt`
+ * 是 `@updatedAt`，服务端的行版本会在 ~10 秒后继续增长。客户端手里的 `expectedUpdatedAt`
+ * 因此变成过期令牌，下一次接受/保存会被误判为「本章保存版本已变化」，而正文其实没被任何人改过。
+ *
+ * 这里只在服务端正文与我们上次读到的 `savedContent` **逐字节一致**时才用最新版本重放一次；
+ * 一旦正文真的不同，就原样抛出 409，保留真实冲突保护。
+ */
+export async function updateNovelChapterWithRebase(
+  id: string,
+  chapterId: string,
+  payload: { content: string; expectedUpdatedAt: string; expectedContent: string },
+) {
+  const attempt = (expectedUpdatedAt: string, silentConflict: boolean) => updateNovelChapter(
+    id,
+    chapterId,
+    { content: payload.content, expectedUpdatedAt, expectedContent: payload.expectedContent },
+    silentConflict ? { silentErrorStatuses: [409] } : undefined,
+  );
+
+  try {
+    return await attempt(payload.expectedUpdatedAt, true);
+  } catch (error) {
+    if ((error as ApiHttpError | undefined)?.status !== 409) throw error;
+    const latest = await getNovelChapters(id);
+    const serverChapter = latest.data?.find((chapter) => chapter.id === chapterId);
+    if (!serverChapter || (serverChapter.content ?? "") !== payload.expectedContent) throw error;
+    return attempt(String(serverChapter.updatedAt), false);
+  }
 }
 
 export async function deleteNovelChapter(id: string, chapterId: string) {

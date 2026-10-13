@@ -673,11 +673,22 @@ export class NovelCoreCrudService {
   }
 
   async updateChapter(novelId: string, chapterId: string, input: Partial<ChapterInput>) {
-    const exists = await prisma.chapter.findFirst({ where: { id: chapterId, novelId }, select: { id: true, updatedAt: true } });
+    const exists = await prisma.chapter.findFirst({
+      where: { id: chapterId, novelId },
+      select: { id: true, updatedAt: true, content: true },
+    });
     if (!exists) {
       throw new Error("章节不存在");
     }
-    if (input.expectedUpdatedAt && exists.updatedAt.getTime() !== new Date(input.expectedUpdatedAt).getTime()) {
+    if (input.expectedContent !== undefined) {
+      // The client sends the exact prose it read, so only a real content
+      // divergence is a conflict. Background artifact sync rewrites
+      // Chapter.expectation (bumping the row's @updatedAt) right after a save,
+      // which must not invalidate an otherwise clean content edit.
+      if ((exists.content ?? "") !== input.expectedContent) {
+        throw new AppError("本章保存版本已变化。请先查看新内容，再合并你的修改。", 409);
+      }
+    } else if (input.expectedUpdatedAt && exists.updatedAt.getTime() !== new Date(input.expectedUpdatedAt).getTime()) {
       throw new AppError("本章保存版本已变化。请先查看新内容，再合并你的修改。", 409);
     }
 

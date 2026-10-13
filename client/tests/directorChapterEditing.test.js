@@ -54,7 +54,10 @@ export async function run(scenario) {
     debts:{count:0,chapterOrders:[]},availableActions:[],sourceRoute:'/lab/director/book',
     sourceTrace:{controlStatus:'completed',controlVersion:1,pauseKind:null,planVersion:'v1'}};
   const workspace={chapterMeta:{chapterId:'c1',order:1,title:chapter.title,wordCount:9,openIssueCount:0,updatedAt:chapter.updatedAt},
-    macroContext:null,diagnosticCards:[],recommendedTask:null};
+    macroContext:null,recommendedTask:null,
+    diagnosticCards:scenario==='diagnostic' ? [{id:'card-1',sourceIssueId:'issue-1',title:'开场节奏偏慢',problemSummary:'前五段铺垫过长',
+      whyItMatters:'读者容易在开篇流失',recommendedAction:'polish',recommendedScope:'selection',anchorRange:{from:0,to:5},
+      paragraphLabel:'第 1 段',severity:'medium',sourceTags:[]}] : []};
   const client=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity,gcTime:0},mutations:{gcTime:0}}});
   client.setQueryData(queryKeys.directorNext.summary('book'),{success:true,data:view});
   client.setQueryData(queryKeys.directorNext.detail('book'),{success:true,data:{view,timeline:[]}});
@@ -63,6 +66,7 @@ export async function run(scenario) {
   client.setQueryData(queryKeys.novels.detail('book'),{success:true,data:metadata});
   client.setQueryData(queryKeys.novels.chapterEditorWorkspace('book','c1'),{success:true,data:workspace});
   useLLMStore.getState().setSelection({provider:'deepseek',model:'deepseek-flash',temperature:0.7});
+  let staleVersionPending=scenario==='stale-version';
   apiClient.defaults.adapter=async config=>{
     const body=config.data ? JSON.parse(config.data) : null;
     requests.push({method:config.method,url:config.url,body});
@@ -75,8 +79,19 @@ export async function run(scenario) {
       targetRange:body.selection,activeCandidateId:'candidate-3',candidates:[{id:'candidate-3',label:'改写一',content:'新的开场',summary:'压紧表达',rationale:'保持事实',
         diffChunks:[{id:'d1',type:'delete',text:body.selection.text},{id:'i3',type:'insert',text:'新的开场'}]}]};
     else if(config.method==='post' && config.url==='/novels/book/snapshots') data={id:'snapshot'};
+    else if(config.method==='post' && config.url==='/novels/book/audit-issues/issue-1/resolve') data={resolved:true};
+    else if(config.method==='get' && config.url==='/novels/book/chapters') data=[chapter];
     else if(config.method==='put' && config.url==='/novels/book/chapters/c1') {
       if(scenario==='conflict') throw new Error('正文已被其他操作更新，请加载新保存版本。');
+      if(scenario==='stale-version' && staleVersionPending) {
+        // The background artifact sync rewrote Chapter.expectation ~12s after the last save,
+        // so the row version moved on even though the prose is untouched.
+        staleVersionPending=false;
+        chapter={...chapter,updatedAt:'2026-10-11T00:02:00.000Z'};
+        throw Object.assign(new Error('Request failed with status code 409'),{isAxiosError:true,config,
+          response:{status:409,statusText:'Conflict',headers:{},config,
+            data:{success:false,error:'本章保存版本已变化。请先查看新内容，再合并你的修改。'}}});
+      }
       chapter={...chapter,content:body.content,updatedAt:'2026-10-11T00:01:00.000Z'};data=chapter;
     } else if(config.url==='/novels/book') data={...metadata,chapters:[chapter]};
     else if(config.url==='/director-next/novels/book/workspace') data={...book,chapters:[chapter]};
@@ -104,20 +119,37 @@ export async function run(scenario) {
     const pausedFollow=follow.disabled && follow.checked;
     const dialog=document.querySelector('[role=dialog]');
     if(!dialog) throw new Error('V2 editor did not open');
-    await click(scenario==='rewrite' ? '测试选择片段' : '测试放置光标');
-    await click(scenario==='rewrite' ? 'AI 优化这段' : '增加对话');
+    if(scenario==='diagnostic') {
+      await click('直接用 AI 处理');
+    } else {
+      await click(scenario==='rewrite' ? '测试选择片段' : '测试放置光标');
+      await click(scenario==='rewrite' ? 'AI 优化这段' : '增加对话');
+    }
     const previewText=dialog.textContent;
     const savedBeforeAccept=chapter.content;
+    const resolvedBeforeAccept=requests.some(row=>row.method==='post'&&row.url.includes('/audit-issues/'));
     if(scenario==='dirty-close') {
       await click('返回正文阅读');
       const protectedCandidate=Boolean(document.querySelector('[role=dialog]'));
       return {protectedCandidate,requests};
     }
-    await click(scenario==='rewrite' ? '接受全部' : '插入正文');
-    if(scenario==='conflict') return {content:chapter.content,candidateRetained:dialog.textContent.includes('插入正文'),requests};
+    await click(scenario==='rewrite'||scenario==='diagnostic' ? '接受全部' : '插入正文');
+    const editorAfterAccept=dialog.querySelector('[data-test-editor]')?.textContent ?? null;
+    if(scenario==='conflict') return {content:chapter.content,editorAfterAccept,candidateRetained:dialog.textContent.includes('插入正文'),requests};
+    const extra=scenario==='stale-version'
+      ? {chapterReads:requests.filter(row=>row.method==='get'&&row.url==='/novels/book/chapters').length,
+        chapterWrites:requests.filter(row=>row.method==='put'&&row.url==='/novels/book/chapters/c1')}
+      : scenario==='diagnostic'
+        ? {cardPanelClosed:!dialog.textContent.includes('直接用 AI 处理这张问题卡'),
+          reselectVisible:dialog.textContent.includes('定位到正文'),
+          resolvedBeforeAccept,
+          resolved:requests.filter(row=>row.method==='post'&&row.url.includes('/audit-issues/')).length,
+          workspaceRefreshes:requests.filter(row=>row.url==='/novels/book/chapters/c1/editor/workspace').length}
+        : {};
     await click('返回正文阅读');
-    return {before,pausedFollow,previewText,savedBeforeAccept,content:chapter.content,reader:document.querySelector('article').textContent,
-      dialogClosed:!document.querySelector('[role=dialog]'),followRestored:!follow.disabled && follow.checked,
+    return {...extra,before,previewText,savedBeforeAccept,editorAfterAccept,content:chapter.content,
+      reader:document.querySelector('article').textContent,dialogClosed:!document.querySelector('[role=dialog]'),
+      pausedFollow,followRestored:!follow.disabled && follow.checked,
       routePreserved:document.body.textContent.includes(scenario==='review' ? '查看本阶段结果' : '章节正文'),requests};
   } finally {
     await act(async()=>root.unmount());client.clear();
@@ -129,7 +161,7 @@ export async function run(scenario) {
       // Slate's DOM caret geometry is covered separately by the shared document tests.
       build.onLoad({filter:/ChapterTextEditor\.tsx$/},()=>({loader:'tsx',contents:`
 import React from 'react';
-export default function Editor(props) {return <div><p>{props.value}</p>
+export default function Editor(props) {return <div><div data-test-editor>{props.value}</div>
   <button onClick={()=>props.onCursorChange(5,{top:20,left:20})}>测试放置光标</button>
   <button onClick={()=>props.onSelectionChange({from:0,to:5,text:'alpha'},{top:20,left:20})}>测试选择片段</button>
 </div>;}` }));
@@ -146,6 +178,8 @@ test('V2 reader opens editor, previews dialogue, inserts only on acceptance and 
   assert.match(result.previewText,/候选一/);assert.match(result.previewText,/候选二/);
   assert.equal(result.content,'alpha门外响起敲门声。\n\nbeta');
   assert.match(result.reader,/门外响起敲门声/);assert.equal(result.dialogClosed,true);
+  assert.ok(result.editorAfterAccept?.startsWith('alpha'),JSON.stringify(result));
+  assert.ok(result.editorAfterAccept?.includes('门外响起敲门声'),JSON.stringify(result));
   const writes=result.requests.filter(row=>row.method!=='get');
   assert.deepEqual(writes.map(row=>row.url),['/novels/book/chapters/c1/editor/continue-preview','/novels/book/snapshots','/novels/book/chapters/c1']);
   assert.equal(writes[0].body.operation,'dialogue');assert.equal(writes[0].body.cursorOffset,5);
@@ -156,6 +190,7 @@ test('V2 reader opens editor, previews dialogue, inserts only on acceptance and 
 test('V2 editor selection rewrite preserves unselected prose and uses the same protected save',async()=>{
   const result=await run('rewrite');
   assert.equal(result.content,'新的开场\n\nbeta');
+  assert.ok(result.editorAfterAccept?.startsWith('新的开场'),JSON.stringify(result));
   assert.equal(result.requests.filter(row=>row.method!=='get').length,3);
   assert.ok(result.requests.every(row=>!row.url.includes('director/commands')));
 });
@@ -179,3 +214,30 @@ test('closing the editor requires confirmation before discarding a ready AI cand
 test('V2 sample preview has no editor or network mutation entrypoint',async()=>{
   const result=await run('preview');assert.equal(result.hasEdit,false);assert.deepEqual(result.requests,[]);
 });
+
+test('accepting after a background artifact write rebases the stale version token instead of failing',async()=>{
+  const result=await run('stale-version');
+  // The first save is rejected with 409 because background artifact sync bumped the row version.
+  assert.equal(result.chapterWrites.length,2,JSON.stringify(result.requests));
+  assert.equal(result.chapterWrites[0].body.expectedUpdatedAt,'2026-10-11T00:00:00.000Z');
+  // ... so the client re-reads the chapter, confirms the prose is untouched, and retries once.
+  assert.equal(result.chapterReads,1,JSON.stringify(result.requests));
+  assert.equal(result.chapterWrites[1].body.expectedUpdatedAt,'2026-10-11T00:02:00.000Z');
+  assert.equal(result.chapterWrites[1].body.expectedContent,'alpha\n\nbeta');
+  // The accepted prose still lands in the editor.
+  assert.ok(result.editorAfterAccept?.startsWith('alpha'),JSON.stringify(result));
+  assert.ok(result.editorAfterAccept?.includes('门外响起敲门声'),JSON.stringify(result));
+});
+
+test('accepting an AI fix launched from a diagnostic card closes that card',async()=>{
+  const result=await run('diagnostic');
+  assert.equal(result.resolvedBeforeAccept,false);
+  assert.ok(result.editorAfterAccept?.startsWith('新的开场'),JSON.stringify(result));
+  // the selected card panel and its highlight must not survive the accepted save
+  assert.equal(result.cardPanelClosed,true,JSON.stringify(result));
+  assert.equal(result.reselectVisible,true,JSON.stringify(result));
+  // and the source audit issue is confirmed handled, then the workspace is refreshed
+  assert.equal(result.resolved,1,JSON.stringify(result.requests));
+  assert.ok(result.workspaceRefreshes>=2,JSON.stringify(result.requests));
+});
+
