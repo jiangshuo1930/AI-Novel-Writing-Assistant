@@ -93,3 +93,99 @@ test("the previous chapter anchor keeps whole sentences within budget", () => {
   assert.equal(/[。！？…]\s*$/.test(before) || before === "", true, `anchor 起点未对齐整句：${anchor}`);
   assert.equal(extractChapterTailAnchor("", 120), "");
 });
+
+// —— 章节编辑器「整章模式」：改写是 paraphrase，不是照抄 ——
+
+test("approximate matching removes sentences that were rewritten rather than copied", () => {
+  // 编辑器整章改写会把「正靠在警车旁」改成「靠在警车旁」这类近逐字复述。
+  const content = [
+    "走廊尽头，玻璃门外，一个穿浅蓝制服的身影靠在警车旁，低头看手机。",
+    "他把手插进裤兜，慢慢往回走。",
+  ].join("\n");
+  const result = stripPreviousChapterEcho(content, PREVIOUS_TAIL, {
+    similarityThreshold: 0.7,
+    scanRatio: 1,
+    minScanChars: 0,
+    maxRemovalRatio: 0.9,
+  });
+  assert.equal(result.edited, true, JSON.stringify(result));
+  assert.equal(result.content.includes("穿浅蓝制服的身影"), false);
+  assert.ok(result.content.includes("把手插进裤兜"), result.content);
+});
+
+test("approximate matching leaves unrelated prose alone", () => {
+  const content = [
+    "奶茶店的玻璃门推开，风铃叮当响了一声。",
+    "柜台后面的女孩抬起头，问他要喝点什么。",
+    "他盯着菜单看了半天，最后还是要了最便宜的那杯。",
+  ].join("\n");
+  const result = stripPreviousChapterEcho(content, PREVIOUS_TAIL, {
+    similarityThreshold: 0.7,
+    scanRatio: 1,
+    minScanChars: 0,
+    maxRemovalRatio: 0.9,
+  });
+  assert.equal(result.edited, false, JSON.stringify(result));
+  assert.equal(result.content, content);
+});
+
+test("approximate matching never applies to short lines", () => {
+  // 相似度其实很高，但两句都短于 16 字，仍必须精确命中才算复述。
+  const tail = "他盯着那张监控截图愣住了。";
+  const chapter = "他盯着那张监控截图愣住。他又翻了一页。";
+  const result = stripPreviousChapterEcho(chapter, tail, {
+    similarityThreshold: 0.7,
+    scanRatio: 1,
+    minScanChars: 0,
+    maxRemovalRatio: 0.9,
+  });
+  assert.equal(result.edited, false, JSON.stringify(result));
+  assert.equal(result.content, chapter);
+});
+
+test("exact matching remains the default", () => {
+  const tail = "走廊尽头，玻璃门外，一个穿浅蓝制服的身影正靠在警车旁，低头看手机。";
+  const chapter = "走廊尽头，玻璃门外，一个穿浅蓝制服的身影靠在警车旁，低头看手机。";
+  const result = stripPreviousChapterEcho(chapter, tail, { maxRemovalRatio: 0.9 });
+  assert.equal(result.edited, false, "默认阈值下不应做近似匹配");
+  assert.equal(result.content, chapter);
+});
+
+test("a whole-chapter scan reaches echoes behind the leading window", () => {
+  const echo = "走廊尽头，玻璃门外，一个穿浅蓝制服的身影靠在警车旁，低头看手机。";
+  const filler = "他在街上漫无目的地走了很久。".repeat(60);
+  const chapter = `${filler}${echo}`;
+  const wholeChapter = stripPreviousChapterEcho(chapter, PREVIOUS_TAIL, {
+    similarityThreshold: 0.7,
+    scanRatio: 1,
+    minScanChars: 0,
+    maxRemovalRatio: 0.9,
+  });
+  assert.equal(wholeChapter.edited, true, "整章扫描应覆盖开头窗口之外的复述");
+  assert.equal(wholeChapter.content.includes("穿浅蓝制服的身影"), false);
+  const leadingOnly = stripPreviousChapterEcho(chapter, PREVIOUS_TAIL, {
+    similarityThreshold: 0.7,
+    maxRemovalRatio: 0.9,
+  });
+  assert.equal(leadingOnly.edited, false, "默认只扫描开头窗口，因此抓不到");
+});
+
+test("a one-character difference in a rewritten echo is still caught", () => {
+  // 真实回归：ch2 曾把 ch1 的「…身影正靠在警车旁…」写成「…身影靠在警车旁…」。
+  // 逐字守卫漏掉这一字之差，编辑器整章模式便把它一直保留了下来。
+  const content = [
+    "走廊尽头，玻璃门外，一个穿浅蓝制服的身影靠在警车旁，低头看手机。",
+    "他把手插进裤兜，站了一会儿。",
+  ].join("\n");
+  const exact = stripPreviousChapterEcho(content, PREVIOUS_TAIL, { maxRemovalRatio: 0.9 });
+  assert.equal(exact.edited, false, "逐字守卫抓不住一字之差");
+  const approximate = stripPreviousChapterEcho(content, PREVIOUS_TAIL, {
+    similarityThreshold: 0.7,
+    scanRatio: 1,
+    minScanChars: 0,
+    maxRemovalRatio: 0.9,
+  });
+  assert.equal(approximate.edited, true, "近似守卫必须抓住这一字之差");
+  assert.equal(approximate.content.includes("穿浅蓝制服的身影"), false);
+  assert.ok(approximate.content.includes("把手插进裤兜"), approximate.content);
+});

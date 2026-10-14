@@ -26,6 +26,7 @@ import {
   chapterEditorContinuationPreviewPrompt,
   type ChapterEditorContinuationPromptInput,
 } from "../../../prompting/prompts/novel/chapterEditor/continuePreview.prompts";
+import { stripPreviousChapterEcho } from "../runtime/context/previousChapterEchoGuard";
 import { buildChapterEditorDiffChunks } from "./chapterEditorDiff";
 import { ChapterEditorWorkspaceService } from "./ChapterEditorWorkspaceService";
 import {
@@ -40,6 +41,16 @@ import {
 } from "./context";
 
 const FULL_CHAPTER_REVISION_LIMIT = 8000;
+
+/**
+ * Editor rewrites paraphrase instead of copying, so echoes of the previous chapter
+ * need approximate matching. 0.7 is tuned on the real ch1/ch2 sample: it drops every
+ * genuine retelling while leaving newly written prose (「他迈开步子，脑子停不下来」)
+ * untouched. Lower values start removing freshly written sentences.
+ */
+const REWRITE_CANDIDATE_SIMILARITY_THRESHOLD = 0.7;
+/** Whole-chapter rewrites legitimately replace a lot, but never more than half. */
+const REWRITE_CANDIDATE_MAX_REMOVAL_RATIO = 0.5;
 
 const OPERATION_LABELS: Record<ChapterEditorOperation, string> = {
   polish: "优化表达",
@@ -172,6 +183,7 @@ export class NovelChapterEditorService {
         macroContextSummary: buildMacroContextSummary(context.macroContext),
         resolvedIntentSummary: buildIntentSummary(resolvedIntent),
         constraintsText: buildConstraintsText(input.constraints),
+        previousChapterTail: context.previousChapterTail,
       } satisfies ChapterEditorRewriteCandidatesPromptInput,
       options: {
         provider: input.provider ?? "deepseek",
@@ -181,16 +193,22 @@ export class NovelChapterEditorService {
     });
 
     const candidates = dedupeCandidates(
-      result.output.candidates.slice(0, 3).map((candidate, index) => ({
-        id: randomUUID(),
-        label: candidate.label?.trim() || `方案 ${index + 1}`,
-        content: candidate.content.trim(),
-        summary: candidate.summary?.trim() || null,
-        rationale: candidate.rationale?.trim() || null,
-        riskNotes: candidate.riskNotes?.filter((item) => item.trim().length > 0) ?? [],
-        semanticTags: candidate.semanticTags?.filter((tag) => tag.trim().length > 0) ?? [],
-        diffChunks: buildChapterEditorDiffChunks(targetRange.text, candidate.content.trim()),
-      })),
+      result.output.candidates.slice(0, 3).map((candidate, index) => {
+        const rawContent = candidate.content.trim();
+        const content = input.scope === "chapter"
+          ? this.stripPreviousChapterEchoFromCandidate(rawContent, context.previousChapterTail, context.chapter.order)
+          : rawContent;
+        return {
+          id: randomUUID(),
+          label: candidate.label?.trim() || `方案 ${index + 1}`,
+          content,
+          summary: candidate.summary?.trim() || null,
+          rationale: candidate.rationale?.trim() || null,
+          riskNotes: candidate.riskNotes?.filter((item) => item.trim().length > 0) ?? [],
+          semanticTags: candidate.semanticTags?.filter((tag) => tag.trim().length > 0) ?? [],
+          diffChunks: buildChapterEditorDiffChunks(targetRange.text, content),
+        };
+      }),
     );
 
     if (candidates.length < 2) {
@@ -206,6 +224,36 @@ export class NovelChapterEditorService {
       candidates,
       activeCandidateId: candidates[0]?.id ?? null,
     };
+  }
+
+  /**
+   * Whole-chapter rewrites start from the current prose, so a chapter that already
+   * retells the previous ending would keep it forever. Editor rewrites paraphrase
+   * instead of copying, hence the approximate similarity threshold.
+   */
+  private stripPreviousChapterEchoFromCandidate(
+    content: string,
+    previousChapterTail: string | null,
+    chapterOrder: number,
+  ): string {
+    const guard = stripPreviousChapterEcho(content, previousChapterTail, {
+      similarityThreshold: REWRITE_CANDIDATE_SIMILARITY_THRESHOLD,
+      scanRatio: 1,
+      minScanChars: 0,
+      maxRemovalRatio: REWRITE_CANDIDATE_MAX_REMOVAL_RATIO,
+    });
+    if (guard.edited) {
+      console.warn(
+        `[chapter-editor-echo-guard] 第 ${chapterOrder} 章整章改写候选移除了 ${guard.removedSentences.length} 句与上一章高度重复的句子（${guard.removedChars} 字）。`,
+      );
+      return guard.content;
+    }
+    if (guard.skippedForSize) {
+      console.warn(
+        `[chapter-editor-echo-guard] 第 ${chapterOrder} 章整章改写候选与上一章重复量过大（${guard.removedChars} 字），已跳过自动裁剪，请人工确认。`,
+      );
+    }
+    return content;
   }
 
   async previewRewrite(

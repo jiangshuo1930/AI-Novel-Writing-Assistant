@@ -22,6 +22,11 @@ export interface ChapterEditorRewriteCandidatesPromptInput {
   macroContextSummary: string;
   resolvedIntentSummary: string;
   constraintsText: string;
+  /**
+   * Closing excerpt of the previous chapter. Only used to tell the model where the
+   * story stands, so whole-chapter rewrites do not re-narrate the previous ending.
+   */
+  previousChapterTail?: string | null;
 }
 
 function renderOptionalBlock(title: string, value?: string | null): string {
@@ -91,8 +96,9 @@ export const chapterEditorRewriteCandidatesPrompt: PromptAsset<
       "1. 不改剧情事实。",
       "2. 不改变人称和叙事视角。",
       "3. 不新增未授权设定。",
-      "4. 尽量保留原段核心信息与上下文承接。",
+      "4. 尽量保留原段核心信息与上下文承接；这里指的是本章自身的信息，不包括上一章已经写过的场景。",
       "5. 不要把文本改得明显像模板化 AI 文风。",
+      "6. 不得复述上一章：改写后的正文任何位置都不得出现与上一章逐字相同的句子，尤其不得把上一章结尾的场景再演一遍当作本章开头。",
       "",
       "候选要求：",
       "1. 返回 2 到 3 个候选。",
@@ -107,7 +113,8 @@ export const chapterEditorRewriteCandidatesPrompt: PromptAsset<
       "改写范围：",
       "1. selection 表示只改写选中片段。",
       "2. chapter 表示改写整章，但依旧要保持章节事实、主线和卷内定位。",
-      "3. " + candidateStyle,
+      "3. chapter 模式下，如果原文含有上一章已经写过的场景、动作、对话或结尾画面，必须删除或改写成本章的新内容，不能原样保留，也不能换个说法重演一遍。",
+      "4. " + candidateStyle,
       "",
       `本次改写意图：${input.operationLabel}`,
       `改写范围：${input.scope === "selection" ? "选中片段" : "整章"}`,
@@ -127,6 +134,8 @@ export const chapterEditorRewriteCandidatesPrompt: PromptAsset<
       renderOptionalBlock("【世界与设定约束】", input.worldConstraintSummary),
       "",
       renderOptionalBlock("【宏观定位】", input.macroContextSummary),
+      "",
+      renderOptionalBlock("【上一章收尾锚点（只用于判断本章从哪里接着写，不是本章素材）】", input.previousChapterTail),
       "",
       renderOptionalBlock("【已解析的修改目标】", input.resolvedIntentSummary),
       "",

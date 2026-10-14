@@ -32,8 +32,12 @@ import {
   splitParagraphsWithRanges,
   type ChapterEditorParagraph,
 } from "./context";
+import { extractChapterTailAnchor } from "../runtime/context/chapterSourceText";
 
 type LoadedWorkspaceNovel = NonNullable<Awaited<ReturnType<NovelCoreService["getNovelById"]>>>;
+
+/** Same budget as the writer chain, so both paths describe the previous ending identically. */
+const PREVIOUS_TAIL_ANCHOR_LENGTH = 240;
 
 export interface ChapterEditorWorkspaceContext {
   novel: LoadedWorkspaceNovel;
@@ -48,6 +52,8 @@ export interface ChapterEditorWorkspaceContext {
   chapterSummary: string;
   openAuditIssues: AuditIssue[];
   macroContext: ChapterEditorMacroContext;
+  /** Whole-sentence closing anchor of the previous chapter, or null for the first chapter. */
+  previousChapterTail: string | null;
 }
 
 function toRoleLabel(planRole?: StoryPlan["planRole"] | null): string | null {
@@ -252,6 +258,7 @@ export class ChapterEditorWorkspaceService {
     const nextVolumeChapter = location.chapterIndex >= 0 ? volumeChapters[location.chapterIndex + 1] ?? null : null;
     const previousChapter = novel.chapters.find((item) => item.order === chapter.order - 1) ?? null;
     const nextChapter = novel.chapters.find((item) => item.order === chapter.order + 1) ?? null;
+    const previousChapterTail = extractChapterTailAnchor(previousChapter?.content, PREVIOUS_TAIL_ANCHOR_LENGTH) || null;
     const styleSummary = buildStyleSummary(novel);
     const chapterSummary = buildChapterSummary(chapter, normalizedContent);
     const openAuditIssues = auditReports.flatMap((report) => report.issues.filter((issue) => issue.status === "open"));
@@ -293,6 +300,7 @@ export class ChapterEditorWorkspaceService {
       chapterSummary,
       openAuditIssues,
       macroContext,
+      previousChapterTail,
     };
   }
 
