@@ -53,7 +53,7 @@ import {
 } from "./context/bookAndVolumeRewardContext";
 import {
   extractChapterOpening,
-  extractChapterTail,
+  extractChapterTailAnchor,
   runtimeChapterSelect,
 } from "./context/chapterSourceText";
 import { resolveChapterResourceCharacterIds } from "./context/chapterParticipantSelection";
@@ -65,6 +65,8 @@ export { resolveChapterResourceCharacterIds } from "./context/chapterParticipant
 
 const OPENING_COMPARE_LIMIT = 3;
 const OPENING_SLICE_LENGTH = 220;
+/** 上一章收尾锚点只保留整句的短片段：够判断承接点，又不给模型大段可抄的原文。 */
+const PREVIOUS_TAIL_ANCHOR_LENGTH = 240;
 
 function mapPlan(plan: Awaited<ReturnType<typeof plannerService.getChapterPlan>>): GenerationContextPackage["plan"] {
   if (!plan) {
@@ -480,7 +482,7 @@ export class GenerationContextAssembler {
       antiCopyCorpus: continuationPack.antiCopyCorpus,
     } satisfies GenerationContextPackage["continuation"];
 
-    const previousChapterTail = extractChapterTail(recentChapters[0]?.content);
+    const previousChapterTail = extractChapterTailAnchor(recentChapters[0]?.content, PREVIOUS_TAIL_ANCHOR_LENGTH);
 
     const storyWorldSlice = worldContextBlock?.rawSlice ?? null;
     const openingHint = await this.buildOpeningConstraintHint(novelId, chapter.order);

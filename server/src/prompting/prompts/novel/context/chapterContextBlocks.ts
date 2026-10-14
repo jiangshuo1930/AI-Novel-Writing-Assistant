@@ -292,8 +292,9 @@ export function buildChapterWriterContextBlocks(
         required: true,
         allowSummary: false,
         content: [
-          "上一章实际尾段（本章开头必须直接承接这里的时间、地点、人物状态和未兑现动作）：",
+          "上一章收尾锚点（仅用于判断本章从哪里接着写：时间、地点、在场人物、未兑现动作）：",
           writeContext.previousChapterTail,
+          "【硬性约束】以上锚点只是位置标记，不是本章素材：本章正文的任何位置（尤其是开头）都不得复述、改写、缩写或引用它的句子，不得重演上一章已经写过的场景、动作或对话。请从锚点之后的下一步动作或下一个时间点直接开始，推进新的场景。",
         ].join("\n"),
       })
       : null,

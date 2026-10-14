@@ -159,7 +159,7 @@ function buildRepairRagContext(input: {
   }
   const fragments = [
     writeContext.previousChapterTail
-      ? `上一章尾段：${writeContext.previousChapterTail}`
+      ? `上一章收尾锚点（仅供判断承接位置，不得复述其句子）：${writeContext.previousChapterTail}`
       : "",
     writeContext.recentChapterSummaries?.length
       ? `最近章节摘要：\n${writeContext.recentChapterSummaries.slice(0, 3).map((item) => `- ${item}`).join("\n")}`

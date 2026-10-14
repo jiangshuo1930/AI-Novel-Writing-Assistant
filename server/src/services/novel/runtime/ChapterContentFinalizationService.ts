@@ -7,6 +7,7 @@ import { directorAutomationLedgerEventService } from "../director/runtime/Direct
 import { filterAcceptedFactItems, type FactLedgerExcludedItem } from "../fact/factLedgerFilter";
 import { novelFactService } from "../fact/NovelFactService";
 import { ChapterArtifactSyncService } from "./ChapterArtifactSyncService";
+import { stripPreviousChapterEcho } from "./context/previousChapterEchoGuard";
 import type { ChapterRuntimeRequestInput } from "./chapterRuntimeSchema";
 import type { StyleReviewResult } from "./PostGenerationStyleReviewRunner";
 import { ChapterQualityGateService } from "./ChapterQualityGateService";
@@ -94,7 +95,20 @@ export class ChapterContentFinalizationService {
   }
 
   async finalizeChapterContent(input: FinalizeChapterContentInput): Promise<FinalizeChapterContentResult> {
-    const finalContent = input.content;
+    const echoGuard = stripPreviousChapterEcho(
+      input.content,
+      input.contextPackage.chapterWriteContext?.previousChapterTail ?? null,
+    );
+    if (echoGuard.edited) {
+      console.warn(
+        `[chapter-echo-guard] 第 ${input.contextPackage.chapter.order} 章开头移除了 ${echoGuard.removedSentences.length} 句与上一章结尾逐字重复的句子（${echoGuard.removedChars} 字）。`,
+      );
+    } else if (echoGuard.skippedForSize) {
+      console.warn(
+        `[chapter-echo-guard] 第 ${input.contextPackage.chapter.order} 章与上一章结尾的重复量过大（${echoGuard.removedChars} 字），已跳过自动裁剪，请人工确认。`,
+      );
+    }
+    const finalContent = echoGuard.content;
     await input.assertExecutionOwnership?.();
     const acceptance = await this.qualityGateService.runAcceptanceGate({
       novelId: input.novelId,
