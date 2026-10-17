@@ -81,7 +81,7 @@ export function buildAutoDirectorRequestPayload(
     postGenerationStyleReviewEnabled: basicForm.postGenerationStyleReviewEnabled,
     sepiaDeAi: basicForm.sepiaDeAi,
     defaultChapterLength: basicForm.defaultChapterLength,
-    estimatedChapterCount: basicForm.estimatedChapterCount,
+    estimatedChapterCount: basicForm.estimatedChapterCountSource === "default" ? undefined : basicForm.estimatedChapterCount,
     projectStatus: basicForm.projectStatus,
     storylineStatus: basicForm.storylineStatus,
     outlineStatus: basicForm.outlineStatus,

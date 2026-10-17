@@ -12,8 +12,8 @@ import type {
 } from "@ai-novel/shared/types/novel";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../../db/prisma";
-import { novelEventBus } from "../../../events";
-import type { VolumeUpdateReason } from "../../../events";
+import { novelEventBus } from "../../../events/publisher";
+import type { VolumeUpdateReason } from "../../../events/publisher";
 import { logMemoryUsage } from "../../../runtime/memoryTelemetry";
 import { payoffLedgerSyncService } from "../../payoff/PayoffLedgerSyncService";
 import { StoryMacroPlanService } from "../storyMacro/StoryMacroPlanService";
@@ -27,6 +27,7 @@ import {
   buildVolumeImpactResult,
 } from "./volumePlanUtils";
 import { generateVolumePlanDocument } from "./volumeGenerationOrchestrator";
+import { recoverMissingVolumeStrategy } from "./recovery/missingStrategy";
 import { VolumeChapterSyncService } from "./VolumeChapterSyncService";
 import { getLegacyVolumeSource } from "./legacyVolumeSource";
 import {
@@ -393,6 +394,10 @@ export class NovelVolumeService {
     return this.updateVolumesWithOptions(novelId, workspaceInput, {
       syncToChapterExecution,
     });
+  }
+
+  async recoverVolumeStrategy(novelId: string, options: VolumeGenerateOptions = {}): Promise<VolumePlanDocument | null> {
+    return recoverMissingVolumeStrategy(novelId, this, options);
   }
 
   async updateVolumesWithOptions(

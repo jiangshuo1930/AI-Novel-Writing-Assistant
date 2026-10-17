@@ -53,7 +53,7 @@ export async function updateNovelChapter(
   chapterId: string,
   payload: Partial<{
     expectedUpdatedAt: string;
-    expectedContent: string;
+    expectedContent: string | null;
     title: string;
     order: number;
     content: string;
@@ -91,7 +91,7 @@ export async function updateNovelChapter(
 export async function updateNovelChapterWithRebase(
   id: string,
   chapterId: string,
-  payload: { content: string; expectedUpdatedAt: string; expectedContent: string },
+  payload: { content: string; expectedUpdatedAt: string; expectedContent: string | null },
 ) {
   const attempt = (expectedUpdatedAt: string, silentConflict: boolean) => updateNovelChapter(
     id,

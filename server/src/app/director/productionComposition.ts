@@ -1,3 +1,4 @@
+import { prepareEditedChapterGate } from "./recovery/editedChapterGate";
 import {withStepUsage} from "./usage";
 import { prisma } from "../../db/prisma";
 import { createProductionStepRegistry, directorProductionPlan, createStoryMacroStepHandler, createBookContractStepHandler,
@@ -26,6 +27,7 @@ import {directorArtifactTypes, resolveConfirmationArtifactTypes} from "./project
 import {readProductionProjection} from "./projections/productionProgress";
 import {assertNovelDirectorVersion, assertV2RunExecution} from "../../modules/novel/director-routing";
 import {AppError} from "../../middleware/errorHandler";
+import {directorIssuePolicyService} from "../../services/novel/director/issues/DirectorIssuePolicyService";
 
 /** Composition only: business generation remains owned by existing novel services. Not enabled by importing this module. */
 export function createDirectorProductionOptions(): DirectorNextServiceOptions {
@@ -61,6 +63,11 @@ export function createDirectorProductionOptions(): DirectorNextServiceOptions {
     volume_strategy: createVolumeStrategyStepHandler({volumeService: volumes, inputProvider: async context => ({...modelOptions(context), estimatedChapterCount: requireLaunch(context.contract).estimatedChapterCount,
       ...(context.contract.chapterRange?.from === 1 ? {skeletonVolumeCount: 1} : {})}), contentHash}),
     volume_beat_sheet: createVolumeBeatSheetStepHandler({volumeService: volumes, inputProvider: async context => {
+      // Old runs may have adopted a skeleton as a complete strategy. Check the saved business facts.
+      await volumes.recoverVolumeStrategy(context.contract.novelId, {
+        ...modelOptions(context), estimatedChapterCount: requireLaunch(context.contract).estimatedChapterCount,
+        taskId: context.runId, entrypoint: "director_next",
+      });
       const range = context.contract.chapterRange;
       if (range) {
         const remaining = range.to-range.from+1;
@@ -103,7 +110,7 @@ export function createDirectorProductionOptions(): DirectorNextServiceOptions {
       readOutcome: readBatchOutcome, waitForPoll: () => new Promise(resolve => setTimeout(resolve, 1000)),
       isRunActive: async runId => (await prisma.directorNextRunControl.findUnique({where: {runId}, select: {status: true}}))?.status === "running", contentHash}),
   }));
-  return {plan: directorProductionPlan, stepRegistry, readEditedArtifact, resumeBusiness, cancelBusiness,
+  return {prepareGate: prepareEditedChapterGate, plan: directorProductionPlan, stepRegistry, readEditedArtifact, resumeBusiness, cancelBusiness,
     executionBoundary: {
       beforeOpen: async (novelId, tx) => {
         await tx.novel.update({where: {id: novelId}, data: {directorEpoch: {increment: 0}}});
@@ -139,6 +146,8 @@ export function createDirectorProductionOptions(): DirectorNextServiceOptions {
     requireLaunch(contract);return contract;
   }, prepareOpen: async contract => {
     await assertNovelDirectorVersion(contract.novelId, "v2");
+    const configured = (await directorIssuePolicyService.getNovelPolicy(contract.novelId)).effectivePolicy.chapterReviewRetryPolicy;
+    if (configured && contract.issuePolicy.pipelinePolicy) contract.issuePolicy.pipelinePolicy.chapterReviewRetryPolicy = {...configured};
     const novel = await prisma.novel.findUniqueOrThrow({where: {id: contract.novelId}, select: {id: true, title: true, description: true}});
     return [{type: "novel_seed", scope: contract.scope, status: "confirmed", protectedUserContent: true, contentRef: `novel:${novel.id}`, contentHash: contentHash({novel, launchInput: contract.launchInput})},
       ...await inferExistingAssets(contract, {read: readExistingAssets, contentHash})];

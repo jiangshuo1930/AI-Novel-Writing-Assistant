@@ -8,7 +8,6 @@ import type { PromptContextBlock } from "../../../core/promptTypes";
 import { buildWriterStyleContractText } from "../../../../services/styleEngine/styleContractText";
 import {
   buildCharacterGuidanceText,
-  buildLedgerItemLine,
   buildParticipantText,
   buildPendingCandidateGuardText,
   buildRelationStageText,
@@ -19,6 +18,7 @@ import {
   toListBlock,
 } from "../chapterLayeredContextShared";
 import { normalizeChapterWriteContext } from "./chapterContextPolicies";
+import { buildCompletedMilestonesBlock, buildPayoffReminderText } from "./chapterHistoricalContext";
 
 export const WRITER_FORBIDDEN_GROUPS = [
   "full_outline",
@@ -237,7 +237,8 @@ export function buildChapterWriterContextBlocks(
   const includeCharacterResources = !isIncremental && hasCharacterResourcePressure(writeContext);
   const includeCharacterDynamics = shouldIncludeCharacterDynamics(writeContext, mode);
   const includeOpenConflicts = !isIncremental && writeContext.openConflictSummaries.length > 0;
-  const includeRecentChapters = mode === "full" && writeContext.recentChapterSummaries.length > 0;
+  const includeRecentChapters = !isIncremental && (writeContext.recentChapterSummaries.length > 0
+    || Boolean(writeContext.previousChapterContent?.trim()));
   const includeStyleContract = mode !== "incremental" && Boolean(writeContext.styleContract);
   const includeContinuationConstraints = mode === "full" && writeContext.continuationConstraints.length > 0;
   const wordRange = resolveTargetWordRange(writeContext.chapterMission.targetWordCount);
@@ -263,6 +264,7 @@ export function buildChapterWriterContextBlocks(
       group: "chapter_mission",
       priority: 100,
       required: true,
+      allowSummary: false,
       content: [
         `章节任务：${writeContext.chapterMission.title}`,
         `目标：${writeContext.chapterMission.objective}`,
@@ -271,9 +273,6 @@ export function buildChapterWriterContextBlocks(
         writeContext.chapterMission.planRole ? `计划角色：${writeContext.chapterMission.planRole}` : "",
         wordRange.targetWordCount != null
           ? `目标篇幅：约 ${wordRange.targetWordCount} 个中文字符（可接受范围 ${wordRange.minWordCount}-${wordRange.maxWordCount}；不要明显低于最低值）。`
-          : "",
-        writeContext.completedMilestones.length > 0
-          ? toListBlock("已完成事项（不得重复追求或重新触发）", writeContext.completedMilestones, "无")
           : "",
         toListBlock("必须推进", writeContext.chapterMission.mustAdvance, "无"),
         toListBlock("必须保留", writeContext.chapterMission.mustPreserve, "无"),
@@ -284,6 +283,7 @@ export function buildChapterWriterContextBlocks(
         writeContext.chapterMission.hookTarget ? `章末钩子：${writeContext.chapterMission.hookTarget}` : "",
       ].filter(Boolean).join("\n"),
     }),
+    buildCompletedMilestonesBlock(writeContext.completedMilestones),
     writeContext.previousChapterTail
       ? createContextBlock({
         id: "previous_chapter_tail",
@@ -417,20 +417,14 @@ export function buildChapterWriterContextBlocks(
         id: "payoff_ledger",
         group: "payoff_ledger",
         priority: 95,
-        required: mode === "review",
-        allowSummary: mode !== "review",
+        required: false,
+        allowSummary: false,
         content: [
           "账本关注提醒：仅供核对；本章必须完成的动作以章节合同为准，窗口提醒本身不是正文缺陷。",
           writeContext.ledgerSummary
             ? `Payoff ledger summary: pending=${writeContext.ledgerSummary.pendingCount}, urgent=${writeContext.ledgerSummary.urgentCount}, overdue=${writeContext.ledgerSummary.overdueCount}`
             : "Payoff ledger summary: none",
-          toListBlock("Urgent payoffs", writeContext.ledgerUrgentItems.map((item) => buildLedgerItemLine(item, "urgent"))),
-          toListBlock("Overdue payoffs", writeContext.ledgerOverdueItems.map((item) => buildLedgerItemLine(item, "overdue"))),
-          toListBlock(
-            "Active pending payoffs",
-            (mode === "review" ? writeContext.ledgerPendingItems : writeContext.ledgerPendingItems.slice(0, 3))
-              .map((item) => buildLedgerItemLine(item, "pending")),
-          ),
+          buildPayoffReminderText(writeContext, mode === "review" ? "review" : "full"),
         ].join("\n"),
       })
       : null,
@@ -490,8 +484,13 @@ export function buildChapterWriterContextBlocks(
       ? createContextBlock({
         id: "recent_chapters",
         group: "recent_chapters",
-        priority: 86,
-        content: toListBlock("Recent chapter summaries", writeContext.recentChapterSummaries),
+        priority: writeContext.previousChapterContent?.trim() ? 100 : 86,
+        required: Boolean(writeContext.previousChapterContent?.trim()) || mode !== "full",
+        allowSummary: !writeContext.previousChapterContent?.trim() && mode === "full",
+        content: writeContext.previousChapterContent?.trim()
+          ? `上一章已保存的完整正文（仅供核对事实，不是当前待审正文；实际发生的事实优先于未执行规划。逐项核对关键物品的来源、形态、持有人和人物位置，不能把载体变化当作同义改写；仅未提及不表示明确不存在）：\n${writeContext.previousChapterContent}`
+          : toListBlock(mode === "full" ? "Recent chapter summaries" : "已保存前文摘要（实际发生的事实优先于尚未执行的规划；不能改写道具来源与持有状态）",
+            mode === "full" ? writeContext.recentChapterSummaries : writeContext.recentChapterSummaries.slice(0, 1)),
       })
       : null,
     mode === "full"

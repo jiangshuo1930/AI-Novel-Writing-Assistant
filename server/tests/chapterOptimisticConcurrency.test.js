@@ -33,7 +33,7 @@ test("chapter save rejects a stale editor version before writing", async () => {
 
 test("chapter save accepts a stale row version when the stored prose still matches", async () => {
   const originalFindFirst = prisma.chapter.findFirst;
-  const originalUpdate = prisma.chapter.update;
+  const originalTransaction = prisma.$transaction;
   let updateCalls = 0;
   // The background artifact sync rewrote Chapter.expectation, so the row version moved on
   // even though the prose the editor read is untouched.
@@ -42,9 +42,17 @@ test("chapter save accepts a stale row version when the stored prose still match
     updatedAt: new Date("2020-01-01T00:00:00.000Z"),
     content: "alpha\n\nbeta",
   });
-  prisma.chapter.update = async () => {
+  // ManualChapterStore writes inside $transaction, so stubbing $transaction is what intercepts
+  // the write; stubbing prisma.chapter.update would miss it and hit the real database.
+  prisma.$transaction = async (callback) => {
     updateCalls += 1;
-    throw new Error("sentinel: reached the chapter write");
+    return callback({
+      chapter: {
+        update: async () => {
+          throw new Error("sentinel: reached the chapter write");
+        },
+      },
+    });
   };
 
   try {
@@ -59,7 +67,7 @@ test("chapter save accepts a stale row version when the stored prose still match
     assert.equal(updateCalls, 1);
   } finally {
     prisma.chapter.findFirst = originalFindFirst;
-    prisma.chapter.update = originalUpdate;
+    prisma.$transaction = originalTransaction;
   }
 });
 

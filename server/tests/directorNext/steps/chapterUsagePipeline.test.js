@@ -8,7 +8,7 @@ const { buildChapterArtifactContentHash } = require('../../../dist/services/nove
 const { novelEventBus } = require('../../../dist/events');
 const promptRunner = require('../../../dist/prompting/core/promptRunner');
 
-async function exercise({ initialTokens = 0, checkpoints, chapterTokens = 100_000, futurePlanningTokens = 0, director = true, rejectBaseline = false, rolling = false, storedCompleted = 0, firstClosed = false, secondClosed = false, reviewedRisk = false, legacySaved = false, staleAcceptance = false, missingBoundary = false, qualityFirst = false, acceptancePause = false } = {}) {
+async function exercise({ initialTokens = 0, checkpoints, chapterTokens = 100_000, futurePlanningTokens = 0, director = true, rejectBaseline = false, rolling = false, storedCompleted = 0, firstClosed = false, secondClosed = false, reviewedRisk = false, legacySaved = false, staleAcceptance = false, missingBoundary = false, qualityFirst = false, acceptancePause = false, edited = false, acceptanceVersion = 2, acceptanceUnavailable = false, bookTargetChapterCount, effective = false } = {}) {
   const restore = [];
   const replace = (target, key, value) => {
     const previous = target[key];
@@ -22,6 +22,7 @@ async function exercise({ initialTokens = 0, checkpoints, chapterTokens = 100_00
     ...(director ? { directorNext: { runId: 'new-run', decisions: [], ...(checkpoints ? { chapterUsage: checkpoints } : {}) } } : {}) };
   const job = { id: 'new-job', novelId: 'book', startOrder: 1, endOrder: 2, status: 'queued', pendingManualRecovery: false,
     startedAt: null, completedCount: storedCompleted, totalCount: 2, retryCount: 0, totalTokens: initialTokens, payload: JSON.stringify(options) };
+  if (effective) Object.assign(job,{promptTokens:0,completionTokens:0});
   const chapters = [1, 2].map(order => ({ id: `c${order}`, novelId: 'book', order, title: `第${order}章`, content: '', artifactSyncCheckpoints: [] }));
   if (firstClosed) {
     chapters[0].content = '原已闭合正文';
@@ -39,9 +40,21 @@ async function exercise({ initialTokens = 0, checkpoints, chapterTokens = 100_00
     Object.assign(chapters[0], { content: '已保存但尚未记录质量债的正文', generationState: 'reviewed', chapterStatus: 'needs_repair' });
     chapters[0].artifactSyncCheckpoints = missingBoundary ? [] : [{ contentHash: buildChapterArtifactContentHash(chapters[0].content), metadataJson: JSON.stringify({ outcome: 'completed' }) }];
   }
+  if (edited) chapters[0].artifactSyncCheckpoints.push({artifactType: "manual_chapter_sync:v1", contentHash: buildChapterArtifactContentHash(chapters[0].content), metadataJson: JSON.stringify({revision: "manual-1"})});
+  const sync = require("../../../dist/services/novel/chapterEditor/synchronization");
+  let synchronized = 0, reassessed = 0;
+  replace(sync.manualChapterSyncService, "ensureCurrent", async () => {synchronized++;});
+  replace(prisma.chapter, "findFirstOrThrow", async () => chapters[0]);
+  replace(prisma.chapterArtifactSyncCheckpoint, "findUnique", async () => edited ? {status: "succeeded"} : null);
+  replace(require("../../../dist/services/novel/production/qualityClosure/recheckEditedChapterQuality"), "recheckEditedChapterQuality", async () => {
+    reassessed++; return {reviewExecuted: !acceptanceUnavailable, pass: false, score, issues, runtimePackage: null, retryCountUsed: 0};
+  });
   const calls = [];
-  let usageReads = 0, classifications = 0, planningTokens = 0;
-  replace(prisma.llmInvocationUsageRecord, 'aggregate', async () => ({ _sum: { totalTokens: planningTokens } }));
+  const routeCalls = [];
+  let usageReads = 0, classifications = 0, planningTokens = 0, cacheTokens = 0;
+  replace(prisma.llmInvocationUsageRecord, 'aggregate', async ({where}) => ({ _sum: where.stage === 'chapter_batch'
+    ? {totalTokens:planningTokens,promptTokens:planningTokens,completionTokens:0,cacheHitTokens:0}
+    : {cacheHitTokens:cacheTokens} }));
   replace(prisma.generationJob, 'findUnique', async () => job);
   replace(prisma.generationJob, 'findUniqueOrThrow', async input => { if (input.select?.totalTokens) usageReads++; return job; });
   replace(prisma.generationJob, 'update', async ({ data }) => {
@@ -50,7 +63,7 @@ async function exercise({ initialTokens = 0, checkpoints, chapterTokens = 100_00
     }
     Object.assign(job, data); return job;
   });
-  replace(prisma.novel, 'findUnique', async () => ({ id: 'book', title: '测试小说', estimatedChapterCount: rolling === 'range' ? 10 : 2 }));
+  replace(prisma.novel, 'findUnique', async () => ({ id: 'book', title: '测试小说', estimatedChapterCount: bookTargetChapterCount ?? (rolling === 'range' ? 10 : 2) }));
   let routePrepared = !rolling || secondClosed;
   replace(prisma.chapter, 'findMany', async () => routePrepared ? chapters : chapters.slice(0, 1));
   replace(prisma.chapter, 'findFirst', async ({ where }) => chapters.find(chapter => where.id ? chapter.id === where.id : chapter.order === where.order));
@@ -60,12 +73,12 @@ async function exercise({ initialTokens = 0, checkpoints, chapterTokens = 100_00
   replace(directorAutomationLedgerEventService, 'recordQualityLoopAssessment', async () => {});
   replace(prisma.chapterArtifactSyncCheckpoint, 'findFirst', async () => {
     const contentHash = require('node:crypto').createHash('sha1').update(staleAcceptance ? '过期正文' : chapters[0].content).digest('hex');
-    return { contentHash, metadataJson: JSON.stringify({ schemaVersion: 2, gate: 'acceptance', contentHash, result: {
+    return { contentHash, metadataJson: JSON.stringify({ schemaVersion: acceptanceVersion, gate: 'acceptance', contentHash, result: {
       assessment: { status: 'repairable', score, summary: '局部问题', assetSyncRecommendation: { reason: '同步已完成' }, continuePolicy: acceptancePause ? 'pause' : 'repair_once' }, score, issues,
     } }) };
   });
   const { ChapterRouteWindowService } = require('../../../dist/services/novel/planning/ChapterRouteWindowService');
-  replace(ChapterRouteWindowService.prototype, 'ensureRouteWindow', async () => { routePrepared = true; });
+  replace(ChapterRouteWindowService.prototype, 'ensureRouteWindow', async (novelId, order, options) => { routeCalls.push({novelId, order, options}); routePrepared = true; });
   replace(prisma.novelWorkflowTask, 'findUnique', async () => { throw new Error('new pipeline must not read a legacy workflow'); });
   replace(prisma.novelWorkflowTask, 'update', async () => { throw new Error('new pipeline must not write a legacy workflow'); });
   replace(promptRunner, 'runStructuredPrompt', async () => { classifications++; throw new Error('test must not call AI'); });
@@ -79,8 +92,10 @@ async function exercise({ initialTokens = 0, checkpoints, chapterTokens = 100_00
   const runtime = { runPipelineChapter: async (_novelId, id, _options, hooks) => {
     if (director && !legacySaved) await hooks.onCheckBudget?.(16000);
     calls.push(id);
-    if (director) assert.equal(JSON.parse(job.payload).directorNext.chapterUsage.find(row => row.chapterId === id).startJobTokens, job.totalTokens);
+    if (director) assert.equal(JSON.parse(job.payload).directorNext.chapterUsage.find(row => row.chapterId === id).startJobTokens,
+      checkpoints?.find(row=>row.chapterId===id)?.startJobTokens ?? job.totalTokens);
     job.totalTokens += chapterTokens;
+    if (effective) {job.promptTokens += chapterTokens*0.8;job.completionTokens += chapterTokens*0.2;cacheTokens += chapterTokens*0.4;}
     const chapter = chapters.find(row => row.id === id);
     chapter.content = `已保存的${id}正文`;
     chapter.generationState = reviewedRisk ? 'reviewed' : 'approved';
@@ -96,7 +111,7 @@ async function exercise({ initialTokens = 0, checkpoints, chapterTokens = 100_00
   try {
     await executor.execute(job.id, 'book', options);
     const outcome = director ? await readBatchOutcome(job, { runId: 'new-run', contract: { novelId: 'book', chapterRange: { from: 1, to: 2 }, issuePolicy: { mode: qualityFirst ? 'quality_first' : 'completion_first' } } }) : null;
-    return { job, chapters, calls, usageReads, classifications, outcome };
+    return { job, chapters, calls, routeCalls, usageReads, classifications, outcome, synchronized, reassessed };
   } finally { for (const undo of restore.reverse()) undo(); }
 }
 
@@ -152,7 +167,7 @@ test('new director pauses at the saved chapter boundary on the 100000-token ceil
   assert.equal(result.job.status, 'queued');
   assert.equal(result.job.retryCount, 0);
   const snapshot = JSON.parse(result.job.payload).directorNext;
-  assert.deepEqual(snapshot.chapterUsage, [{ chapterId: 'c1', chapterOrder: 1, startJobTokens: 500, startChapterBatchTokens: 0, totalTokens: 100000, endJobTokens: 100500, endChapterBatchTokens: 0 }]);
+  assert.deepEqual(snapshot.chapterUsage, [{ chapterId: 'c1', chapterOrder: 1, startJobTokens: 500, startChapterBatchTokens: 0, totalTokens: 100000, endJobTokens: 100500, endChapterBatchTokens: 0, budgetPause:{reserveTokens:0,stage:null} }]);
   assert.equal(snapshot.decisions.at(-1).issueCode, 'runtime.token_budget_exceeded');
   assert.equal(snapshot.decisions.at(-1).locked, true);
   assert.equal(result.outcome.chapters[0].closed, true);
@@ -201,6 +216,26 @@ test('chapter preflight reserves room before starting another AI stage', async (
   assert.equal(result.job.pendingManualRecovery, true);
   assert.match(result.job.error, /预留 16000 Tokens/);
   assert.equal(result.chapters[0].content, '');
+  assert.deepEqual(JSON.parse(result.job.payload).directorNext.chapterUsage[0].budgetPause,{reserveTokens:16000,stage:null});
+});
+
+test('new effective budgets use cache from the invocation ledger and single-weight output across chapters',async()=>{
+ const result=await exercise({effective:true});
+ assert.deepEqual(result.calls,['c1','c2']);
+ assert.equal(result.job.status,'succeeded');
+ assert.equal(result.job.totalTokens,200000);
+ const rows=JSON.parse(result.job.payload).directorNext.chapterUsage;
+ assert.deepEqual(rows.map(row=>row.effectiveTokens),[60000,60000]);
+ assert.deepEqual(rows.map(row=>row.cacheHitTokens),[40000,40000]);
+});
+
+test('a granted legacy chapter resumes with its saved baseline and cumulative usage',async()=>{
+ const result=await exercise({initialTokens:89892,chapterTokens:100,
+  checkpoints:[{chapterId:'c1',chapterOrder:1,startJobTokens:0,totalTokens:89892,tokenLimit:122000}]});
+ assert.deepEqual(result.calls,['c1','c2']);
+ assert.equal(result.job.status,'succeeded');
+ const first=JSON.parse(result.job.payload).directorNext.chapterUsage[0];
+ assert.equal(first.startJobTokens,0);assert.equal(first.totalTokens,89992);assert.equal(first.tokenLimit,122000);
 });
 
 test('recovery keeps the original chapter baseline and refuses another generation after exhaustion', async () => {
@@ -277,4 +312,48 @@ test('a limited director range also prepares missing chapters without extending 
   assert.equal(result.job.completedCount, 2);
   assert.equal(result.job.endOrder, 2);
   assert.equal(result.outcome.chapters.every(chapter => chapter.closed), true);
+});
+
+for (const qualityFirst of [false, true]) {
+  test('author edit with no closed usage is reassessed without writing or repairing; qualityFirst=' + qualityFirst, async () => {
+    const result = await exercise({legacySaved: true, edited: true, staleAcceptance: true, qualityFirst, chapterTokens: 100});
+    assert.equal(result.synchronized, 1);
+    assert.equal(result.reassessed, 1);
+    assert.deepEqual(result.calls, qualityFirst ? [] : ['c2']);
+    assert.equal(result.chapters[0].content, '已保存但尚未记录质量债的正文');
+    assert.equal(result.job.pendingManualRecovery, qualityFirst);
+    assert.equal(result.job.retryCount, 0);
+  });
+}
+test('current schema v3 acceptance is recoverable with the original closed usage checkpoint', async () => {
+  const checkpoint = {chapterId: 'c1', chapterOrder: 1, startJobTokens: 0, totalTokens: 87858, endJobTokens: 87858};
+  const result = await exercise({legacySaved: true, acceptanceVersion: 3, initialTokens: 87858, checkpoints: [checkpoint], chapterTokens: 100});
+  assert.deepEqual(result.calls, ['c2']);
+  assert.equal(result.reassessed, 0);
+  assert.deepEqual(JSON.parse(result.job.payload).directorNext.chapterUsage[0], checkpoint);
+  assert.equal(result.job.status, 'succeeded');
+});
+
+for (const qualityFirst of [false, true]) {
+  test('unavailable acceptance retains author prose as quality debt; qualityFirst=' + qualityFirst, async () => {
+    const result = await exercise({legacySaved: true, edited: true, staleAcceptance: true, acceptanceUnavailable: true, qualityFirst, chapterTokens: 100});
+    assert.deepEqual(result.calls, qualityFirst ? [] : ['c2']);
+    assert.equal(result.job.pendingManualRecovery, qualityFirst);
+    assert.equal(JSON.parse(result.chapters[0].riskFlags).qualityLoop.terminalAction, 'defer_and_continue');
+    assert.equal(result.chapters[0].content, '已保存但尚未记录质量债的正文');
+  });
+}
+
+test('a partial long-book batch keeps the full-book ending target without extending authorized prose', async () => {
+  const result = await exercise({ rolling: 'range', bookTargetChapterCount: 400, chapterTokens: 100 });
+  assert.ok(result.routeCalls.length > 0);
+  for (const call of result.routeCalls) {
+    assert.equal(call.options.completionProfile.mode, 'serial_book');
+    assert.equal(call.options.completionProfile.targetChapterCount, 400);
+    assert.equal(call.options.completionProfile.endingRequiredBy, 400);
+  }
+  assert.deepEqual(result.calls, ['c1', 'c2']);
+  assert.equal(result.job.endOrder, 2);
+  assert.equal(result.job.totalCount, 2);
+  assert.equal(result.job.status, 'succeeded');
 });

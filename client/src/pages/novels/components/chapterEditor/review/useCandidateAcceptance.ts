@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import type { ChapterEditorCandidate } from "@ai-novel/shared/types/novel";
-import { applySelectedChapterEditorDiff, insertChapterContinuation, replaceChapterSelection } from "@ai-novel/shared/types/chapterEditor/document";
+import { applySelectedChapterEditorDiff, groupChapterEditorDiffChanges, insertChapterContinuation, replaceChapterSelection } from "@ai-novel/shared/types/chapterEditor/document";
 import { createNovelSnapshot, updateNovelChapterWithRebase } from "@/api/novel";
 import { toast } from "@/components/ui/toast";
 import type { ChapterEditorSessionState } from "../chapterEditorTypes";
@@ -15,8 +15,8 @@ export function useCandidateAcceptance(input: {
   savedContent: string;
   sourceSnapshot?: string;
   savedUpdatedAt: string;
-  applyAcceptedContent: (content: string, saved: { content?: string | null; updatedAt: string }) => void;
-  onAccepted: () => Promise<void>;
+  acknowledgeSave: (content: string, saved: { content?: string | null; updatedAt: string }) => void;
+  onAccepted: (result: { nextContent: string; savedUpdatedAt: string; fullyAccepted: boolean }) => Promise<void>;
 }) {
   return useMutation({
     mutationFn: async () => {
@@ -39,11 +39,13 @@ export function useCandidateAcceptance(input: {
         expectedUpdatedAt: input.savedUpdatedAt,
         expectedContent: input.savedContent,
       });
-      return { nextContent, saved: response.data };
+      const fullyAccepted = groupChapterEditorDiffChanges(candidate.diffChunks).every((change) => selectedChangeIds.has(change.id));
+      return { nextContent, saved: response.data, fullyAccepted };
     },
-    onSuccess: async ({ nextContent, saved }) => {
-      input.applyAcceptedContent(nextContent, { content: saved?.content ?? nextContent, updatedAt: String(saved?.updatedAt ?? Date.now()) });
-      await input.onAccepted();
+    onSuccess: async ({ nextContent, saved, fullyAccepted }) => {
+      const savedUpdatedAt = String(saved?.updatedAt ?? Date.now());
+      input.acknowledgeSave(nextContent, { content: saved?.content ?? nextContent, updatedAt: savedUpdatedAt });
+      await input.onAccepted({ nextContent: saved?.content ?? nextContent, savedUpdatedAt, fullyAccepted });
       toast.success("所选修改已保存，修改前版本可在历史中查看。");
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "应用候选版本失败。"),

@@ -111,7 +111,7 @@ export interface ChapterInput {
    * (bumping the @updatedAt row version) without touching the prose, so a
    * timestamp alone produces false "本章保存版本已变化" conflicts.
    */
-  expectedContent?: string;
+  expectedContent?: string | null;
   title: string;
   order: number;
   content?: string;

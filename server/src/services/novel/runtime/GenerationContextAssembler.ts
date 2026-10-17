@@ -527,6 +527,7 @@ export class GenerationContextAssembler {
       openAuditIssues: mappedOpenAuditIssues,
       previousChaptersSummary,
       previousChapterTail,
+      previousChapterContent: recentChapters[0]?.content ?? null,
       openingHint,
       continuation: runtimeContinuation,
       styleContext,
@@ -589,7 +590,11 @@ export class GenerationContextAssembler {
         beforeChapterOrder: chapter.order,
       });
       if (factEntries.length > 0) {
-        chapterWriteContext.completedMilestones = factEntries.map((entry) => entry.text);
+        // Milestones and state changes arrive as separate category lists. The
+        // prompt's recent window must follow chapter chronology across both.
+        chapterWriteContext.completedMilestones = [...factEntries]
+          .sort((left, right) => left.chapterOrder - right.chapterOrder)
+          .map((entry) => entry.text);
       }
     } catch (error) {
       console.warn("[context-assembler] fact ledger read failed, completedMilestones will be empty", {

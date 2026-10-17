@@ -157,6 +157,9 @@ function mapDiagnosticCard(
     title: string;
     problemSummary: string;
     whyItMatters: string;
+    repairGoal?: string;
+    repairApproach?: string;
+    mustPreserve?: string[];
     recommendedAction: ChapterEditorDiagnosticCard["recommendedAction"];
     recommendedScope: ChapterEditorDiagnosticCard["recommendedScope"];
     paragraphStart?: number | null;
@@ -175,6 +178,9 @@ function mapDiagnosticCard(
     title: card.title,
     problemSummary: card.problemSummary,
     whyItMatters: card.whyItMatters,
+    repairGoal: card.repairGoal,
+    repairApproach: card.repairApproach,
+    mustPreserve: card.mustPreserve,
     recommendedAction: card.recommendedAction,
     recommendedScope: card.recommendedScope,
     anchorRange: buildAnchorRangeFromParagraphBounds(paragraphs, start, end),

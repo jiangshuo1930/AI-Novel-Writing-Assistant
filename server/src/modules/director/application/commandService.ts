@@ -8,11 +8,12 @@ import type {
   InitialArtifact,
 } from "./ports";
 import type {GateService} from "./gateService";
+import {directorChapterBudgetGrantSchema, type DirectorChapterBudgetGrant} from "@ai-novel/shared/types/director/chapterBudget";
 
 export type DirectorCommand =
   | { type: "open_run"; novelId: string; driver: RunContract["driver"]; stepIdsInScope: string[] | null; launchInput?: RunLaunchInput; idempotencyKey: string }
   | { type: "resolve_gate"; runId: string; decision: "confirm" | "confirm_after_edit" | "regenerate"; guidance?: string; chapterPlanEdit?: import("@ai-novel/shared/types/director/revision").ChapterPlanEdit; expectedVersion: number; idempotencyKey: string }
-  | { type: "resume"; runId: string; expectedVersion: number; idempotencyKey: string }
+  | { type: "resume"; runId: string; expectedVersion: number; idempotencyKey: string; chapterBudget?: DirectorChapterBudgetGrant }
   | { type: "handoff"; runId: string; toDriver: RunContract["driver"]; expectedVersion: number; idempotencyKey: string }
   | { type: "cancel"; runId: string; expectedVersion: number; idempotencyKey: string };
 
@@ -63,6 +64,7 @@ export interface CommandServiceDeps {
   }) => RunContract;
   prepareOpen?: (contract: RunContract) => Promise<readonly InitialArtifact[]>;
   gateService?: Pick<GateService, "prepare">;
+  prepareGate?: (contract: RunContract, resolution: NonNullable<CommandTransitionInput["gateResolution"]>) => Promise<void>;
 }
 
 function isDirectorCommand(value: unknown): value is DirectorCommand {
@@ -86,7 +88,20 @@ export class CommandService {
       throw new InvalidDirectorCommandError("命令格式不正确。");
     }
     const existing = await this.deps.commandRepository.find(input.idempotencyKey);
-    if (existing) return replayResult(existing);
+    if (existing) {
+      const saved = existing.payload as Partial<Extract<DirectorCommand, {type: "resume"}>> | null;
+      const grant = input.type === "resume" ? input.chapterBudget : undefined;
+      if (grant || saved?.chapterBudget) {
+        const previous = saved?.chapterBudget;
+        if (input.type !== "resume" || saved?.type !== "resume" || saved.runId !== input.runId
+          || saved.expectedVersion !== input.expectedVersion || !grant || !previous
+          || grant.jobId !== previous.jobId || grant.chapterId !== previous.chapterId
+          || grant.metric !== previous.metric || grant.tokenLimit !== previous.tokenLimit) {
+          throw new InvalidDirectorCommandError("同一预算授权不能改用其他章节或额度，请刷新后重试。");
+        }
+      }
+      return replayResult(existing);
+    }
 
     try {
       return await this.executeFresh(input);
@@ -140,6 +155,9 @@ export class CommandService {
     if (control.status !== "paused") {
       throw new InvalidDirectorCommandError("只有暂停中的创作可以继续。");
     }
+    if (command.chapterBudget && (!directorChapterBudgetGrantSchema.safeParse(command.chapterBudget).success || control.pause?.kind !== "manual_recovery")) {
+      throw new InvalidDirectorCommandError("只能为预算暂停中的章节追加有效额度。");
+    }
     return this.transition(command, { type: "resume" });
   }
 
@@ -149,6 +167,11 @@ export class CommandService {
       throw new InvalidDirectorCommandError("只有等待确认的创作可以处理门控。");
     }
     const resolution = this.deps.gateService ? await this.deps.gateService.prepare(command.runId, command.decision, command.expectedVersion, {guidance: command.guidance, chapterPlanEdit: command.chapterPlanEdit}) : undefined;
+    if (resolution && this.deps.prepareGate) {
+      const contract = await this.deps.runRepository.getContract(command.runId);
+      if (!contract) throw new InvalidDirectorCommandError("找不到要确认的创作。");
+      await this.deps.prepareGate(contract, resolution);
+    }
     return this.transition(command, { type: "resolve_gate" }, resolution);
   }
 
@@ -167,6 +190,7 @@ export class CommandService {
       event,
       expectedVersion: command.expectedVersion,
       ...(gateResolution ? {gateResolution} : {}),
+      ...(command.type === "resume" && command.chapterBudget ? {chapterBudget: command.chapterBudget} : {}),
     });
     return {
       runId: result.runId,
