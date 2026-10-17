@@ -444,7 +444,6 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
     sourceSnapshot: session.mode === "continuation"
       ? lastContinuationRequestRef.current?.contentSnapshot : lastPreviewRequestRef.current?.contentSnapshot,
     savedUpdatedAt: draft.savedUpdatedAt,
-    savedContent: draft.savedContent,
     acknowledgeSave: draft.acknowledgeSave,
     onAccepted: async ({ nextContent, savedUpdatedAt, fullyAccepted }) => {
       // 只有「全部变更块都被采纳」才算这个问题卡真正被处理完；部分采纳保留卡片。
